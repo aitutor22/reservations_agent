@@ -145,6 +145,7 @@ class RestaurantRealtimeSession:
         self.agent = None
         self.runner = None
         self.session = None
+        self.session_context = None
         self.is_running = False
         
     async def initialize(self):
@@ -198,12 +199,14 @@ class RestaurantRealtimeSession:
         print("[RestaurantAgent] Agent initialized with restaurant tools")
         
     async def start_session(self):
-        """Start the realtime session"""
+        """Start the realtime session with proper context management"""
         if not self.runner:
             await self.initialize()
             
         print("[RestaurantAgent] Starting session...")
-        self.session = await self.runner.run()
+        # Use context manager for proper session lifecycle
+        self.session_context = await self.runner.run()
+        self.session = await self.session_context.__aenter__()
         self.is_running = True
         print("[RestaurantAgent] Session started")
         return self.session
@@ -245,7 +248,7 @@ class RestaurantRealtimeSession:
             print("[RestaurantAgent] No session available")
             return
             
-        async with self.session:
+        try:
             print("[RestaurantAgent] Processing events...")
             
             async for event in self.session:
@@ -310,6 +313,20 @@ class RestaurantRealtimeSession:
                                 "data": audio_bytes
                             }
                             
+                elif event_type == "audio_interrupted":
+                    # User interrupted the assistant - just notify frontend
+                    print("[RestaurantAgent] Audio interrupted by user")
+                    yield {
+                        "type": "audio_interrupted"
+                    }
+                    
+                elif event_type == "audio_end":
+                    # Audio response completed
+                    print("[RestaurantAgent] Audio response completed")
+                    yield {
+                        "type": "audio_end"
+                    }
+                    
                 elif event_type == "error":
                     error = getattr(event, 'error', 'Unknown error')
                     print(f"[RestaurantAgent] Error: {error}")
@@ -320,11 +337,24 @@ class RestaurantRealtimeSession:
                     self.is_running = False
                     break
                     
+        except Exception as e:
+            print(f"[RestaurantAgent] Error in process_events: {e}")
+            self.is_running = False
+            
     async def stop_session(self):
-        """Stop the realtime session"""
+        """Stop the realtime session with proper cleanup"""
         print("[RestaurantAgent] Stopping session...")
         self.is_running = False
-        # Session cleanup handled by context manager
+        
+        # Properly exit the context manager
+        if self.session_context:
+            try:
+                await self.session_context.__aexit__(None, None, None)
+            except Exception as e:
+                print(f"[RestaurantAgent] Error closing session context: {e}")
+            self.session_context = None
+            
+        self.session = None
         print("[RestaurantAgent] Session stopped")
 
 

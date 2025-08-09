@@ -476,6 +476,13 @@ export default new Vuex.Store({
               })
             } else if (data.type === 'session_started') {
               console.log('Session started:', data.session_id)
+            } else if (data.type === 'audio_interrupted') {
+              console.log('Audio interrupted - stopping playback')
+              // Clear audio queue when interrupted
+              audioQueue = []
+              isPlaying = false
+            } else if (data.type === 'audio_end') {
+              console.log('Audio response completed')
             }
           } catch (e) {
             // If not JSON, might be binary audio data
