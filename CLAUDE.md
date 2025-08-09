@@ -24,7 +24,7 @@ Ramen Restaurant Voice Reservation Agent - An AI-powered voice agent for ramen r
 
 1. **Agent Architecture**
    - Main greeting agent routes to specialized agents
-   - General info agent handles hours, location, daily specials, ramen menu
+   - Information agent handles hours, location, daily specials, ramen menu, and complex queries
    - Reservation agent manages bookings with tool calling
    - Multi-turn conversation support with context retention
 
@@ -114,9 +114,9 @@ pytest
 
 ## Conversation Flows
 
-### General Information Flow
+### Information Query Flow
 1. User asks about hours/location/daily specials/ramen varieties
-2. General info agent responds with accurate ramen restaurant information
+2. Information agent responds with accurate ramen restaurant information (quick response or vector search)
 3. Agent asks if user needs anything else
 4. Routes to reservation agent if needed
 
@@ -153,7 +153,7 @@ interface AppState {
   sessionId: string | null;
   isRecording: boolean;
   transcript: TranscriptMessage[];
-  currentAgentState: 'greeting' | 'general-info' | 'reservation' | 'confirmation';
+  currentAgentState: 'greeting' | 'information' | 'reservation' | 'confirmation';
   pendingReservation: Partial<Reservation> | null;
   confirmedReservation: Reservation | null;
 }
