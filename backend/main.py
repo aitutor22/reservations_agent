@@ -146,91 +146,15 @@ async def process_message(data: dict):
     }
 
 
+# Import the WebSocket handler
+from websocket_handler import handle_websocket_connection
+
 # WebSocket endpoint for real-time communication
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for real-time audio and text communication"""
-    await websocket.accept()
-    
-    # Verify session
-    if session_id not in active_sessions:
-        await websocket.send_json({
-            "type": "error",
-            "code": "INVALID_SESSION",
-            "message": "Invalid session ID"
-        })
-        await websocket.close()
-        return
-    
-    service = get_openai_service()
-    
-    try:
-        while True:
-            # Receive message from client
-            data = await websocket.receive_text()
-            message_data = json.loads(data)
-            
-            message_type = message_data.get("type")
-            
-            if message_type == "audio:chunk":
-                # Handle audio chunk (placeholder for OpenAI Realtime API)
-                # This would be processed through OpenAI's speech-to-text
-                await websocket.send_json({
-                    "type": "audio:processing",
-                    "message": "Audio processing not yet implemented"
-                })
-                
-            elif message_type == "text:message":
-                # Process text message
-                user_message = message_data.get("text", "")
-                
-                # Send partial transcript
-                await websocket.send_json({
-                    "type": "transcript:partial",
-                    "text": user_message,
-                    "role": "user"
-                })
-                
-                # Process with OpenAI service
-                response, state = await service.process_message(user_message)
-                
-                # Update session state
-                active_sessions[session_id]["state"] = state
-                
-                # Send agent response
-                await websocket.send_json({
-                    "type": "transcript:final",
-                    "text": response,
-                    "role": "agent"
-                })
-                
-                # Send state update
-                await websocket.send_json({
-                    "type": "agent:state",
-                    "state": state,
-                    "context": service.get_session_context()
-                })
-                
-            elif message_type == "session:end":
-                # End session
-                break
-                
-            elif message_type == "ping":
-                # Heartbeat
-                await websocket.send_json({"type": "pong"})
-    
-    except WebSocketDisconnect:
-        print(f"WebSocket disconnected for session {session_id}")
-    except Exception as e:
-        print(f"WebSocket error: {e}")
-        await websocket.send_json({
-            "type": "error",
-            "message": str(e)
-        })
-    finally:
-        # Clean up session
-        if session_id in active_sessions:
-            del active_sessions[session_id]
+    # Use the new WebSocket handler
+    await handle_websocket_connection(websocket, session_id)
 
 
 # Restaurant information endpoints (REST fallback)

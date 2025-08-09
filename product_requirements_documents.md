@@ -62,10 +62,8 @@ Context retention throughout conversation
 5. Frontend Specifications
 5.1 Technology Stack
 
-Framework: React 18+ with TypeScript
-Styling: Tailwind CSS
-State Management: React Context API (or Zustand for complex state)
-Audio Handling: Web Audio API + WebRTC
+Framework: vue 2
+State Management: vuex
 API Communication: WebSocket for real-time audio streaming
 
 5.2 User Interface Components
