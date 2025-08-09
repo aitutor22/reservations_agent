@@ -329,13 +329,24 @@ class RestaurantRealtimeSession:
                     
                 elif event_type == "error":
                     error = getattr(event, 'error', 'Unknown error')
-                    print(f"[RestaurantAgent] Error: {error}")
-                    yield {
-                        "type": "error",
-                        "error": str(error)
-                    }
-                    self.is_running = False
-                    break
+                    error_str = str(error)
+                    print(f"[RestaurantAgent] Error: {error_str}")
+                    
+                    # Check if it's an audio truncation error - these are recoverable
+                    if "already shorter than" in error_str:
+                        print("[RestaurantAgent] Audio truncation error - continuing session")
+                        yield {
+                            "type": "warning",
+                            "message": "Audio sync issue detected, continuing..."
+                        }
+                        # Don't break on truncation errors, they're recoverable
+                    else:
+                        yield {
+                            "type": "error",
+                            "error": error_str
+                        }
+                        self.is_running = False
+                        break
                     
         except Exception as e:
             print(f"[RestaurantAgent] Error in process_events: {e}")

@@ -155,8 +155,9 @@ export default {
           // Add to buffer
           this.pcmBuffer.push(pcm16)
           
-          // Send chunks every ~100ms worth of audio (2400 samples at 24kHz)
-          if (this.pcmBuffer.length >= 1) {
+          // Send chunks every ~200ms worth of audio (approx 2 buffers)
+          // This reduces network overhead and avoids overwhelming the session
+          if (this.pcmBuffer.length >= 2) {
             this.sendPCM16Chunk()
           }
         }
@@ -171,6 +172,13 @@ export default {
         // Store stream reference for cleanup
         this.mediaStream = stream
         
+        // Also periodically flush buffer to prevent accumulation
+        this.flushInterval = setInterval(() => {
+          if (this.pcmBuffer.length > 0 && this.isRecording) {
+            this.sendPCM16Chunk()
+          }
+        }, 300) // Flush every 300ms
+        
       } catch (error) {
         console.error('Failed to start recording:', error)
         this.$store.commit('ADD_MESSAGE', {
@@ -182,6 +190,12 @@ export default {
     
     async stopRecording() {
       this.isRecording = false
+      
+      // Clear flush interval
+      if (this.flushInterval) {
+        clearInterval(this.flushInterval)
+        this.flushInterval = null
+      }
       
       // Send any remaining buffered audio
       if (this.pcmBuffer.length > 0) {
@@ -214,24 +228,40 @@ export default {
     sendPCM16Chunk() {
       if (this.pcmBuffer.length === 0) return
       
-      // Combine all buffered chunks
-      const totalLength = this.pcmBuffer.reduce((sum, chunk) => sum + chunk.length, 0)
+      // Limit chunk size to prevent WebSocket frame size errors
+      // Take at most 5 buffers (~400ms of audio) at a time
+      const chunksToSend = this.pcmBuffer.splice(0, Math.min(5, this.pcmBuffer.length))
+      
+      // Combine the chunks to send
+      const totalLength = chunksToSend.reduce((sum, chunk) => sum + chunk.length, 0)
       const combinedPCM16 = new Int16Array(totalLength)
       let offset = 0
       
-      for (const chunk of this.pcmBuffer) {
+      for (const chunk of chunksToSend) {
         combinedPCM16.set(chunk, offset)
         offset += chunk.length
       }
       
-      // Clear buffer
-      this.pcmBuffer = []
-      
       // Convert Int16Array to base64
       const base64Audio = this.arrayBufferToBase64(combinedPCM16.buffer)
       
-      // Send base64-encoded PCM16 audio
-      this.$store.dispatch('sendAudioChunk', base64Audio)
+      // Check size before sending (base64 is ~1.33x larger than binary)
+      // Max safe size: ~700KB binary -> ~930KB base64
+      if (base64Audio.length > 700000) {
+        console.warn('Audio chunk too large, splitting...')
+        // If still too large, send in smaller pieces
+        const halfLength = Math.floor(combinedPCM16.length / 2)
+        const firstHalf = combinedPCM16.slice(0, halfLength)
+        const secondHalf = combinedPCM16.slice(halfLength)
+        
+        this.$store.dispatch('sendAudioChunk', this.arrayBufferToBase64(firstHalf.buffer))
+        setTimeout(() => {
+          this.$store.dispatch('sendAudioChunk', this.arrayBufferToBase64(secondHalf.buffer))
+        }, 50)
+      } else {
+        // Send base64-encoded PCM16 audio
+        this.$store.dispatch('sendAudioChunk', base64Audio)
+      }
     },
     
     arrayBufferToBase64(buffer) {

@@ -483,6 +483,9 @@ export default new Vuex.Store({
               isPlaying = false
             } else if (data.type === 'audio_end') {
               console.log('Audio response completed')
+            } else if (data.type === 'warning') {
+              console.warn('Session warning:', data.message)
+              // Don't show warnings to user, just log them
             }
           } catch (e) {
             // If not JSON, might be binary audio data
@@ -548,12 +551,21 @@ export default new Vuex.Store({
     async sendAudioChunk({ state }, base64Audio) {
       if (state.websocket && state.websocket.readyState === WebSocket.OPEN) {
         try {
-          // Send base64-encoded PCM16 audio
-          state.websocket.send(JSON.stringify({
+          const message = JSON.stringify({
             type: 'audio_chunk',
             audio: base64Audio
-          }))
-          console.log('Sent audio chunk (base64 PCM16)')
+          })
+          
+          // Log size for debugging
+          const sizeKB = Math.round(message.length / 1024)
+          console.log(`Sending audio chunk: ${sizeKB}KB`)
+          
+          // Warn if approaching WebSocket frame limit
+          if (message.length > 900000) {
+            console.warn(`Large audio chunk: ${sizeKB}KB - may exceed WebSocket limit`)
+          }
+          
+          state.websocket.send(message)
         } catch (error) {
           console.error('Failed to send audio chunk:', error)
         }

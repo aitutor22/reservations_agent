@@ -280,6 +280,11 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
                                 # RealtimeAgent expects base64-encoded PCM16
                                 await session_manager.send_audio(audio_base64)
                                 
+                        elif msg_type == "end_audio":
+                            # User finished sending audio
+                            print(f"[RestaurantAgent WS] End of audio input")
+                            # The session will process this with VAD
+                            
                         elif msg_type == "end_session":
                             print(f"[RestaurantAgent WS] Ending session {session_id}")
                             break
