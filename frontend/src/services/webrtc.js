@@ -253,17 +253,36 @@ class WebRTCService {
         break
 
       case 'conversation.item.created':
-        // Handle conversation updates (transcriptions)
-        if (event.item.role === 'user') {
-          this.emit('userTranscript', {
-            text: event.item.content[0]?.transcript || '',
-            timestamp: event.item.created_at
-          })
-        } else if (event.item.role === 'assistant') {
-          this.emit('assistantTranscript', {
-            text: event.item.content[0]?.transcript || '',
-            timestamp: event.item.created_at
-          })
+        // Handle conversation updates (text and transcriptions)
+        if (event.item && event.item.content && event.item.content[0]) {
+          const content = event.item.content[0]
+          let text = ''
+          
+          // Extract text from different content types
+          if (content.transcript) {
+            // Audio transcription
+            text = content.transcript
+          } else if (content.text) {
+            // Direct text response
+            text = content.text
+          } else if (typeof content === 'string') {
+            // Plain string
+            text = content
+          }
+          
+          if (text) {
+            if (event.item.role === 'user') {
+              this.emit('userTranscript', {
+                text: text,
+                timestamp: event.item.created_at
+              })
+            } else if (event.item.role === 'assistant') {
+              this.emit('assistantTranscript', {
+                text: text,
+                timestamp: event.item.created_at
+              })
+            }
+          }
         }
         break
 
@@ -309,7 +328,8 @@ class WebRTCService {
    * @param {string} text - Text to send
    */
   sendText(text) {
-    return this.sendEvent({
+    // Send the user's text message
+    const sent = this.sendEvent({
       type: 'conversation.item.create',
       item: {
         type: 'message',
@@ -322,6 +342,15 @@ class WebRTCService {
         ]
       }
     })
+    
+    if (sent) {
+      // Trigger a response generation
+      this.sendEvent({
+        type: 'response.create'
+      })
+    }
+    
+    return sent
   }
 
   /**

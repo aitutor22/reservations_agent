@@ -99,7 +99,18 @@ export default {
       if (!this.canSend) return
       
       const message = this.messageText.trim()
-      this.$emit('sendMessage', message)
+      
+      // Route based on mode
+      if (this.voiceMode && this.isVoiceReady) {
+        // Send via WebRTC data channel when in voice mode
+        console.log('Sending text via WebRTC:', message)
+        this.$store.dispatch('sendTextViaWebRTC', message)
+      } else {
+        // Send via WebSocket when in text mode or WebRTC not ready
+        console.log('Sending text via WebSocket:', message)
+        this.$emit('sendMessage', message)
+      }
+      
       this.messageText = ''
       this.$refs.messageInput.focus()
     },

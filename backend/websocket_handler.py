@@ -7,6 +7,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 import json
 import logging
 from typing import Dict, Any
+from services.openai_service import get_openai_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -82,19 +83,35 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: str):
                 
                 # Handle different message types
                 if message_type == "text:message":
-                    # Echo the text message back
+                    # Process text message with OpenAI service
                     text_content = message.get("text", "")
                     logger.info(f"Processing text message: {text_content}")
-                    print('received and call backend api')
-                    # call backend api
                     
-                    # Send echo response
-                    await manager.send_message(websocket, {
-                        "type": "text:response",
-                        "text": f"Received: {text_content}",
-                        "echo": True,
-                        "original": text_content
-                    })
+                    try:
+                        # Get OpenAI service and process message
+                        service = get_openai_service()
+                        response_text, agent_state = await service.process_message(text_content)
+                        
+                        logger.info(f"AI response generated, agent state: {agent_state}")
+                        
+                        # Send AI response
+                        await manager.send_message(websocket, {
+                            "type": "text:response",
+                            "text": response_text,
+                            "echo": False,
+                            "original": text_content,
+                            "agent_state": agent_state
+                        })
+                    except Exception as e:
+                        logger.error(f"Error processing message with AI: {e}")
+                        # Fallback to echo if AI fails
+                        await manager.send_message(websocket, {
+                            "type": "text:response",
+                            "text": "I apologize, but I'm having trouble processing your message. Please try again.",
+                            "echo": False,
+                            "original": text_content,
+                            "error": str(e)
+                        })
                 
                 elif message_type == "ping":
                     # Respond to heartbeat

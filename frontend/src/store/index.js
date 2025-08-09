@@ -339,6 +339,34 @@ export default new Vuex.Store({
         webrtcService.stopRecording()
         commit('SET_RECORDING', false)
       }
+    },
+    
+    sendTextViaWebRTC({ commit }, text) {
+      // Add user message to chat UI immediately
+      commit('ADD_MESSAGE', {
+        content: text,
+        role: 'user'
+      })
+      
+      // Send text through WebRTC data channel to Realtime API
+      if (webrtcService.isConnected) {
+        console.log('Sending text through WebRTC data channel:', text)
+        const sent = webrtcService.sendText(text)
+        
+        if (!sent) {
+          console.error('Failed to send text via WebRTC')
+          commit('ADD_MESSAGE', {
+            content: 'Failed to send message. Please try again.',
+            role: 'system'
+          })
+        }
+      } else {
+        console.warn('WebRTC not connected, cannot send text')
+        commit('ADD_MESSAGE', {
+          content: 'Voice connection not ready. Please wait...',
+          role: 'system'
+        })
+      }
     }
   },
   modules: {

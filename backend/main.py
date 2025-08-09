@@ -3,11 +3,11 @@ FastAPI Main Application
 Restaurant Voice Reservation Agent Backend
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import asyncio
 import json
 import uuid
@@ -18,6 +18,10 @@ import os
 from config import config
 from services.openai_service import get_openai_service
 from knowledge.vector_store_manager import setup_knowledge_base
+from database import get_db, init_db, close_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from models.reservation import ReservationCreate, ReservationUpdate, ReservationResponse
+from services.reservation_service import get_reservation_service
 
 
 # Session management
@@ -30,7 +34,60 @@ async def lifespan(app: FastAPI):
     # Startup
     print("Starting Restaurant Voice Reservation Agent...")
     
+    # Initialize database
     try:
+        print("Initializing database...")
+        await init_db()
+        print("Database initialized successfully")
+    except Exception as db_error:
+        print(f"Warning: Could not initialize database: {db_error}")
+        print("Continuing without database support...")
+    
+    try:
+        # List all vector stores from OpenAI
+        print("\n" + "="*60)
+        print("Fetching Vector Stores from OpenAI API...")
+        print("="*60)
+        
+        api_key = os.getenv("OPENAI_API_KEY") or config.OPENAI_API_KEY
+        if api_key:
+            async with httpx.AsyncClient() as client:
+                try:
+                    response = await client.get(
+                        "https://api.openai.com/v1/vector_stores",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "OpenAI-Beta": "assistants=v2"
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        vector_stores = response.json()
+                        print(f"\nTotal Vector Stores: {len(vector_stores.get('data', []))}")
+                        print("-"*60)
+                        
+                        for store in vector_stores.get('data', []):
+                            print(f"ID: {store.get('id')}")
+                            print(f"Name: {store.get('name', 'Unnamed')}")
+                            print(f"Created: {store.get('created_at')}")
+                            print(f"File Counts: {store.get('file_counts', {})}")
+                            print(f"Status: {store.get('status')}")
+                            print(f"Bytes: {store.get('usage_bytes', 0)}")
+                            print("-"*40)
+                        
+                        if not vector_stores.get('data'):
+                            print("No vector stores found.")
+                    else:
+                        print(f"Failed to fetch vector stores: {response.status_code}")
+                        print(f"Response: {response.text}")
+                        
+                except Exception as e:
+                    print(f"Error fetching vector stores: {e}")
+        else:
+            print("No OpenAI API key configured - skipping vector store listing")
+        
+        print("="*60 + "\n")
+        
         # Initialize knowledge base
         print("Initializing knowledge base...")
         try:
@@ -54,6 +111,10 @@ async def lifespan(app: FastAPI):
     print("Shutting down...")
     service = get_openai_service()
     service.cleanup()
+    
+    # Close database connections
+    await close_db()
+    
     print("Cleanup complete")
 
 
@@ -288,6 +349,100 @@ async def query_restaurant_info(data: dict):
             }
     else:
         raise HTTPException(status_code=503, detail="Information service unavailable")
+
+
+# Reservation endpoints
+@app.post("/api/reservations", response_model=ReservationResponse)
+async def create_reservation(
+    reservation: ReservationCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new reservation"""
+    try:
+        service = await get_reservation_service(db)
+        result = await service.create_reservation(reservation)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create reservation: {str(e)}")
+
+
+@app.get("/api/reservations/{phone_number}", response_model=ReservationResponse)
+async def get_reservation(
+    phone_number: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get reservation by phone number"""
+    service = await get_reservation_service(db)
+    reservation = await service.get_reservation_by_phone(phone_number)
+    
+    if not reservation:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    
+    return reservation
+
+
+@app.put("/api/reservations/{phone_number}", response_model=ReservationResponse)
+async def update_reservation(
+    phone_number: str,
+    update_data: ReservationUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update an existing reservation"""
+    service = await get_reservation_service(db)
+    reservation = await service.update_reservation(phone_number, update_data)
+    
+    if not reservation:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    
+    return reservation
+
+
+@app.delete("/api/reservations/{phone_number}")
+async def cancel_reservation(
+    phone_number: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Cancel a reservation"""
+    service = await get_reservation_service(db)
+    deleted = await service.delete_reservation(phone_number)
+    
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    
+    return {"message": "Reservation cancelled successfully"}
+
+
+@app.get("/api/reservations", response_model=List[ReservationResponse])
+async def list_reservations(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
+    date: Optional[str] = Query(None, description="Filter by date (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all reservations with optional filtering"""
+    service = await get_reservation_service(db)
+    reservations = await service.list_all_reservations(skip=skip, limit=limit, filter_date=date)
+    return reservations
+
+
+@app.post("/api/reservations/check-availability")
+async def check_availability(
+    data: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    """Check availability for a given date/time"""
+    check_date = data.get("date")
+    check_time = data.get("time")
+    party_size = data.get("party_size", 2)
+    
+    if not check_date or not check_time:
+        raise HTTPException(status_code=400, detail="Date and time are required")
+    
+    service = await get_reservation_service(db)
+    availability = await service.check_availability(check_date, check_time, party_size)
+    return availability
 
 
 # Admin endpoints for testing
