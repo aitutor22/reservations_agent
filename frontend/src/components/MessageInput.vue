@@ -16,8 +16,9 @@
             type="button"
             class="voice-button"
             :disabled="disabled"
-            @click="toggleVoiceMode"
-            :title="voiceMode ? 'Switch to text' : 'Switch to voice (coming soon)'"
+            :class="{ 'voice-active': voiceMode, 'recording': isRecording }"
+            @click="voiceMode ? toggleRecording() : toggleVoiceMode()"
+            :title="voiceMode ? (isRecording ? 'Stop recording' : 'Start recording') : 'Switch to voice mode'"
           >
             <svg v-if="!voiceMode" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
@@ -44,8 +45,11 @@
         </div>
       </div>
     </form>
-    <div class="input-hint">
-      {{ voiceMode ? 'Voice mode coming soon. Using text input for now.' : 'Type a message or click the mic for voice input (coming soon)' }}
+    <div class="input-hint" :class="{ 'voice-mode': voiceMode }">
+      <span v-if="voiceMode && webrtcStatus === 'connecting'">Connecting to voice service...</span>
+      <span v-else-if="voiceMode && isRecording">🔴 Recording... Click mic to stop</span>
+      <span v-else-if="voiceMode">🎤 Voice mode active - Click mic to speak</span>
+      <span v-else>Type a message or click the mic for voice input</span>
     </div>
   </div>
 </template>
@@ -62,7 +66,9 @@ export default {
   data() {
     return {
       messageText: '',
-      voiceMode: false
+      voiceMode: false,
+      isRecording: false,
+      micPermissionGranted: false
     }
   },
   computed: {
@@ -73,7 +79,19 @@ export default {
       if (this.disabled) {
         return 'Connecting...'
       }
-      return this.voiceMode ? 'Voice mode (coming soon)' : 'Type your message...'
+      if (this.voiceMode) {
+        if (this.isRecording) {
+          return 'Recording... Click mic to stop'
+        }
+        return 'Voice mode - Click mic to speak'
+      }
+      return 'Type your message...'
+    },
+    webrtcStatus() {
+      return this.$store.state.webrtcStatus
+    },
+    isVoiceReady() {
+      return this.voiceMode && this.webrtcStatus === 'connected'
     }
   },
   methods: {
@@ -85,11 +103,78 @@ export default {
       this.messageText = ''
       this.$refs.messageInput.focus()
     },
-    toggleVoiceMode() {
+    async toggleVoiceMode() {
+      // Toggle between text and voice mode
       this.voiceMode = !this.voiceMode
-      if (!this.voiceMode) {
+      
+      if (this.voiceMode) {
+        // Switching to voice mode
+        await this.initializeVoiceMode()
+      } else {
+        // Switching back to text mode
+        this.stopVoiceMode()
         this.$refs.messageInput.focus()
       }
+    },
+    
+    async initializeVoiceMode() {
+      // Check if WebRTC is already connected
+      if (this.webrtcStatus === 'connected') {
+        console.log('WebRTC already connected')
+        return
+      }
+      
+      // Initialize WebRTC connection
+      try {
+        await this.$store.dispatch('initializeWebRTC')
+        this.micPermissionGranted = true
+      } catch (error) {
+        console.error('Failed to initialize voice mode:', error)
+        this.voiceMode = false
+        this.$store.commit('ADD_MESSAGE', {
+          content: 'Failed to initialize voice mode. Please check microphone permissions.',
+          role: 'system'
+        })
+      }
+    },
+    
+    stopVoiceMode() {
+      // Stop recording if active
+      if (this.isRecording) {
+        this.stopRecording()
+      }
+      
+      // Disconnect WebRTC if in voice mode
+      if (this.webrtcStatus === 'connected') {
+        this.$store.dispatch('disconnectWebRTC')
+      }
+    },
+    
+    toggleRecording() {
+      if (!this.voiceMode) return
+      
+      if (this.isRecording) {
+        this.stopRecording()
+      } else {
+        this.startRecording()
+      }
+    },
+    
+    startRecording() {
+      if (!this.isVoiceReady) {
+        console.warn('Voice not ready')
+        return
+      }
+      
+      this.isRecording = true
+      this.$store.dispatch('startRecording')
+    },
+    
+    stopRecording() {
+      if (!this.isRecording) return
+      
+      this.isRecording = false
+      this.$store.dispatch('stopRecording')
     }
   },
   mounted() {
@@ -176,6 +261,29 @@ export default {
   }
 }
 
+.voice-button {
+  &.voice-active {
+    background: #edf2f7;
+    color: #667eea;
+    
+    &:hover:not(:disabled) {
+      background: #e9d8fd;
+      color: #764ba2;
+    }
+  }
+  
+  &.recording {
+    background: #fef2f2;
+    color: #ef4444;
+    animation: pulse-recording 1.5s infinite;
+    
+    &:hover:not(:disabled) {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+  }
+}
+
 .send-button {
   &.active {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -194,6 +302,23 @@ export default {
   text-align: center;
   margin-top: 0.5rem;
   opacity: 0.8;
+  
+  &.voice-mode {
+    color: #667eea;
+    font-weight: 500;
+  }
+}
+
+@keyframes pulse-recording {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
 }
 
 @media (max-width: 640px) {

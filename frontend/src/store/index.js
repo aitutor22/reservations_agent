@@ -1,6 +1,7 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
 import websocketService from '@/services/websocket'
+import webrtcService from '@/services/webrtc'
 
 Vue.use(Vuex)
 
@@ -13,14 +14,23 @@ export default new Vuex.Store({
     currentAgentState: 'greeting',
     pendingReservation: null,
     confirmedReservation: null,
-    websocket: null
+    websocket: null,
+    // WebRTC state
+    webrtc: null,
+    webrtcStatus: 'idle', // idle, connecting, connected, error
+    isVoiceMode: false,
+    isRecording: false,
+    ephemeralToken: null,
+    microphonePermission: null // null, granted, denied
   },
   getters: {
     sortedMessages: state => {
       return state.messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
     },
     isConnected: state => state.connectionStatus === 'connected',
-    hasActiveSession: state => state.sessionId !== null
+    hasActiveSession: state => state.sessionId !== null,
+    isWebRTCReady: state => state.webrtcStatus === 'connected',
+    isInVoiceMode: state => state.isVoiceMode
   },
   mutations: {
     ADD_MESSAGE(state, message) {
@@ -53,6 +63,25 @@ export default new Vuex.Store({
     SET_WEBSOCKET(state, websocket) {
       state.websocket = websocket
     },
+    // WebRTC mutations
+    SET_WEBRTC(state, webrtc) {
+      state.webrtc = webrtc
+    },
+    SET_WEBRTC_STATUS(state, status) {
+      state.webrtcStatus = status
+    },
+    SET_VOICE_MODE(state, enabled) {
+      state.isVoiceMode = enabled
+    },
+    SET_RECORDING(state, recording) {
+      state.isRecording = recording
+    },
+    SET_EPHEMERAL_TOKEN(state, token) {
+      state.ephemeralToken = token
+    },
+    SET_MICROPHONE_PERMISSION(state, permission) {
+      state.microphonePermission = permission
+    },
     CLEAR_MESSAGES(state) {
       state.messages = []
     },
@@ -65,6 +94,13 @@ export default new Vuex.Store({
       state.pendingReservation = null
       state.confirmedReservation = null
       state.websocket = null
+      // Clear WebRTC state
+      state.webrtc = null
+      state.webrtcStatus = 'idle'
+      state.isVoiceMode = false
+      state.isRecording = false
+      state.ephemeralToken = null
+      state.microphonePermission = null
     }
   },
   actions: {
@@ -192,6 +228,117 @@ export default new Vuex.Store({
     
     updateConnectionStatus({ commit }, status) {
       commit('SET_CONNECTION_STATUS', status)
+    },
+    
+    // WebRTC Actions
+    async initializeWebRTC({ commit, state }) {
+      commit('SET_WEBRTC_STATUS', 'connecting')
+      commit('SET_VOICE_MODE', true)
+      
+      try {
+        // Get ephemeral token from backend
+        const response = await fetch('http://localhost:8000/api/realtime/session', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        if (!response.ok) {
+          throw new Error('Failed to get ephemeral token')
+        }
+        
+        const data = await response.json()
+        const ephemeralKey = data.ephemeral_key
+        
+        if (!ephemeralKey) {
+          throw new Error('No ephemeral key received')
+        }
+        
+        commit('SET_EPHEMERAL_TOKEN', ephemeralKey)
+        commit('SET_WEBRTC', webrtcService)
+        
+        // Set up WebRTC event listeners
+        webrtcService.on('connected', () => {
+          commit('SET_WEBRTC_STATUS', 'connected')
+          commit('SET_MICROPHONE_PERMISSION', 'granted')
+          console.log('WebRTC connected')
+        })
+        
+        webrtcService.on('disconnected', () => {
+          commit('SET_WEBRTC_STATUS', 'idle')
+          commit('SET_VOICE_MODE', false)
+          commit('SET_RECORDING', false)
+        })
+        
+        webrtcService.on('error', (error) => {
+          console.error('WebRTC error:', error)
+          commit('SET_WEBRTC_STATUS', 'error')
+        })
+        
+        webrtcService.on('microphoneError', (error) => {
+          console.error('Microphone error:', error)
+          commit('SET_MICROPHONE_PERMISSION', 'denied')
+          commit('SET_WEBRTC_STATUS', 'error')
+        })
+        
+        webrtcService.on('userTranscript', ({ text }) => {
+          // Add user transcription to messages
+          commit('ADD_MESSAGE', {
+            content: text,
+            role: 'user'
+          })
+        })
+        
+        webrtcService.on('assistantTranscript', ({ text }) => {
+          // Add assistant transcription to messages
+          commit('ADD_MESSAGE', {
+            content: text,
+            role: 'agent'
+          })
+        })
+        
+        // Connect WebRTC with ephemeral token
+        await webrtcService.connect(ephemeralKey, data.session_id)
+        
+      } catch (error) {
+        console.error('Failed to initialize WebRTC:', error)
+        commit('SET_WEBRTC_STATUS', 'error')
+        commit('SET_VOICE_MODE', false)
+        
+        // Show error message
+        commit('ADD_MESSAGE', {
+          content: `Failed to initialize voice mode: ${error.message}`,
+          role: 'system'
+        })
+        
+        throw error
+      }
+    },
+    
+    async disconnectWebRTC({ commit, state }) {
+      if (webrtcService.isConnected) {
+        webrtcService.disconnect()
+      }
+      
+      commit('SET_WEBRTC_STATUS', 'idle')
+      commit('SET_VOICE_MODE', false)
+      commit('SET_RECORDING', false)
+      commit('SET_EPHEMERAL_TOKEN', null)
+    },
+    
+    startRecording({ commit }) {
+      if (webrtcService.isConnected) {
+        webrtcService.startRecording()
+        commit('SET_RECORDING', true)
+      }
+    },
+    
+    stopRecording({ commit }) {
+      if (webrtcService.isConnected) {
+        webrtcService.stopRecording()
+        commit('SET_RECORDING', false)
+      }
     }
   },
   modules: {

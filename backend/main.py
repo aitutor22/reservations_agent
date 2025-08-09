@@ -12,6 +12,8 @@ import asyncio
 import json
 import uuid
 from datetime import datetime
+import httpx
+import os
 
 from config import config
 from services.openai_service import get_openai_service
@@ -82,6 +84,88 @@ async def health_check():
         "version": config.APP_VERSION,
         "timestamp": datetime.utcnow().isoformat()
     }
+
+
+# OpenAI Realtime API ephemeral token generation
+@app.post("/api/realtime/session")
+async def create_realtime_session():
+    """
+    Generate ephemeral token for WebRTC connection to OpenAI Realtime API
+    The token is valid for 1 minute and enables direct browser-to-OpenAI communication
+    """
+    try:
+        # Check if API key is configured
+        api_key = os.getenv("OPENAI_API_KEY") or config.OPENAI_API_KEY
+        if not api_key:
+            raise HTTPException(
+                status_code=500,
+                detail="OpenAI API key not configured"
+            )
+        
+        # Create ephemeral token via OpenAI API
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.openai.com/v1/realtime/sessions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-4o-realtime-preview-2024-12-17",
+                    "voice": "verse",  # Options: alloy, echo, fable, onyx, nova, verse
+                    "instructions": config.GREETING_AGENT_INSTRUCTIONS,
+                    "turn_detection": {
+                        "type": "server_vad",  # Server voice activity detection
+                        "threshold": 0.5,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 500
+                    },
+                    "input_audio_format": "pcm16",
+                    "output_audio_format": "pcm16",
+                    "temperature": 0.8
+                }
+            )
+            
+            if response.status_code != 200:
+                error_detail = response.text
+                print(f"OpenAI API error: {response.status_code} - {error_detail}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"Failed to create realtime session: {error_detail}"
+                )
+            
+            data = response.json()
+            
+            # Log session creation (without exposing the key)
+            session_id = str(uuid.uuid4())
+            print(f"Created realtime session: {session_id}")
+            
+            # Return ephemeral token and configuration
+            return {
+                "session_id": session_id,
+                "ephemeral_key": data.get("client_secret", {}).get("value"),
+                "expires_at": data.get("client_secret", {}).get("expires_at"),
+                "model": data.get("model"),
+                "voice": data.get("voice"),
+                "instructions": data.get("instructions"),
+                "turn_detection": data.get("turn_detection"),
+                "message": "Ephemeral token generated successfully. Valid for 60 seconds."
+            }
+            
+    except httpx.RequestError as e:
+        print(f"Network error creating realtime session: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Network error connecting to OpenAI API"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Unexpected error creating realtime session: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create realtime session: {str(e)}"
+        )
 
 
 # Session management endpoints
