@@ -36,9 +36,7 @@ async def lifespan(app: FastAPI):
     
     # Initialize database
     try:
-        print("Initializing database...")
         await init_db()
-        print("Database initialized successfully")
     except Exception as db_error:
         print(f"Warning: Could not initialize database: {db_error}")
         print("Continuing without database support...")
@@ -148,6 +146,7 @@ async def health_check():
 
 
 # OpenAI Realtime API ephemeral token generation
+# this is hit at the start of the conversation (voice)
 @app.post("/api/realtime/session")
 async def create_realtime_session():
     """
