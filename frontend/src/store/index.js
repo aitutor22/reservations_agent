@@ -5,6 +5,68 @@ import webrtcService from '@/services/webrtc'
 
 Vue.use(Vuex)
 
+// Audio context for playing PCM16 audio
+let audioContext = null
+let audioQueue = []
+let isPlaying = false
+
+// Function to play PCM16 audio data
+async function playPCM16Audio(blob) {
+  try {
+    // Initialize audio context on first use
+    if (!audioContext) {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: 24000 // Match OpenAI's PCM16 format
+      })
+    }
+
+    // Convert blob to ArrayBuffer
+    const arrayBuffer = await blob.arrayBuffer()
+    const int16Array = new Int16Array(arrayBuffer)
+    
+    // Convert Int16 to Float32 for Web Audio API
+    const float32Array = new Float32Array(int16Array.length)
+    for (let i = 0; i < int16Array.length; i++) {
+      float32Array[i] = int16Array[i] / 32768.0 // Convert to -1.0 to 1.0 range
+    }
+    
+    // Create audio buffer
+    const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000)
+    audioBuffer.getChannelData(0).set(float32Array)
+    
+    // Queue the audio for playback
+    audioQueue.push(audioBuffer)
+    
+    // Play if not already playing
+    if (!isPlaying) {
+      playNextInQueue()
+    }
+  } catch (error) {
+    console.error('Error playing audio:', error)
+  }
+}
+
+// Play the next audio buffer in the queue
+function playNextInQueue() {
+  if (audioQueue.length === 0) {
+    isPlaying = false
+    return
+  }
+  
+  isPlaying = true
+  const audioBuffer = audioQueue.shift()
+  
+  const source = audioContext.createBufferSource()
+  source.buffer = audioBuffer
+  source.connect(audioContext.destination)
+  
+  source.onended = () => {
+    playNextInQueue() // Play next chunk when this one ends
+  }
+  
+  source.start(0)
+}
+
 export default new Vuex.Store({
   state: {
     messages: [],
@@ -369,24 +431,24 @@ export default new Vuex.Store({
       }
     },
     
-    // Test RealtimeAgent via WebSocket (Backend-routed)
-    async testRealtimeAgent({ commit }) {
+    // Restaurant RealtimeAgent via WebSocket (Backend-routed)
+    async connectRealtimeAgent({ commit }) {
       commit('SET_CONNECTION_STATUS', 'connecting')
       commit('ADD_MESSAGE', {
-        content: 'Connecting to RealtimeAgent test endpoint...',
+        content: 'Connecting to Sakura Ramen House voice assistant...',
         role: 'system'
       })
       
       try {
-        // Connect to the test WebSocket endpoint
-        const ws = new WebSocket('ws://localhost:8000/ws/realtime/test')
+        // Connect to the restaurant agent WebSocket endpoint
+        const ws = new WebSocket('ws://localhost:8000/ws/realtime/agent')
         
         ws.onopen = () => {
-          console.log('Connected to RealtimeAgent test')
+          console.log('Connected to Restaurant RealtimeAgent')
           commit('SET_CONNECTION_STATUS', 'connected')
           commit('ADD_MESSAGE', {
-            content: 'Connected to RealtimeAgent! You can now type messages to test the agent.',
-            role: 'system'
+            content: 'Welcome to Sakura Ramen House! How can I help you today?',
+            role: 'agent'
           })
           
           // Store WebSocket for sending messages
@@ -419,7 +481,8 @@ export default new Vuex.Store({
             // If not JSON, might be binary audio data
             if (event.data instanceof Blob) {
               console.log('Received audio data:', event.data.size, 'bytes')
-              // TODO: Play audio response
+              // Play audio response using Web Audio API
+              playPCM16Audio(event.data)
             }
           }
         }
@@ -452,7 +515,7 @@ export default new Vuex.Store({
       }
     },
     
-    // Send message to RealtimeAgent test
+    // Send message to Restaurant RealtimeAgent
     sendToRealtimeAgent({ state, commit }, message) {
       if (state.websocket && state.websocket.readyState === WebSocket.OPEN) {
         // Add user message to UI
@@ -468,9 +531,35 @@ export default new Vuex.Store({
         }))
       } else {
         commit('ADD_MESSAGE', {
-          content: 'Not connected to RealtimeAgent. Use testRealtimeAgent() first.',
+          content: 'Not connected to the restaurant assistant. Please use connectRealtimeAgent() first.',
           role: 'system'
         })
+      }
+    },
+    
+    // Send audio chunk to Restaurant RealtimeAgent
+    async sendAudioChunk({ state }, base64Audio) {
+      if (state.websocket && state.websocket.readyState === WebSocket.OPEN) {
+        try {
+          // Send base64-encoded PCM16 audio
+          state.websocket.send(JSON.stringify({
+            type: 'audio_chunk',
+            audio: base64Audio
+          }))
+          console.log('Sent audio chunk (base64 PCM16)')
+        } catch (error) {
+          console.error('Failed to send audio chunk:', error)
+        }
+      }
+    },
+    
+    // Signal end of audio input
+    sendEndOfAudio({ state }) {
+      if (state.websocket && state.websocket.readyState === WebSocket.OPEN) {
+        state.websocket.send(JSON.stringify({
+          type: 'end_audio'
+        }))
+        console.log('Sent end of audio signal')
       }
     }
   },

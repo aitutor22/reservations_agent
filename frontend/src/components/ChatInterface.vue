@@ -39,17 +39,21 @@ export default {
     })
   },
   methods: {
-    ...mapActions(['sendMessage']),
+    ...mapActions(['sendToRealtimeAgent']),
     handleSendMessage(message) {
-      this.sendMessage(message)
+      // Send message to the Restaurant RealtimeAgent
+      this.sendToRealtimeAgent(message)
     }
   },
   mounted() {
-    this.$store.dispatch('initializeChat')
+    // Connect to the Restaurant RealtimeAgent instead of old WebSocket
+    this.$store.dispatch('connectRealtimeAgent')
   },
   beforeDestroy() {
     // Clean up WebSocket connection when component is destroyed
-    this.$store.dispatch('disconnectWebSocket')
+    if (this.$store.state.websocket) {
+      this.$store.state.websocket.close()
+    }
   }
 }
 </script>

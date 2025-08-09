@@ -227,19 +227,19 @@ async def create_realtime_session():
         )
 
 
-# Test Realtime Agent endpoint
-@app.websocket("/ws/realtime/test")
-async def test_realtime_websocket(websocket: WebSocket):
-    """WebSocket endpoint for testing RealtimeAgent with WebRTC audio"""
+# Restaurant Realtime Agent endpoint
+@app.websocket("/ws/realtime/agent")
+async def restaurant_realtime_websocket(websocket: WebSocket):
+    """WebSocket endpoint for Restaurant RealtimeAgent with voice capabilities"""
     await websocket.accept()
     session_id = str(uuid.uuid4())
     
-    print(f"[TestRealtime WS] New connection: {session_id}")
+    print(f"[RestaurantAgent WS] New connection: {session_id}")
     
-    # Import here to avoid circular dependencies
-    from test_realtime_agent import TestRealtimeSession
+    # Import the restaurant agent
+    from realtime_agent import RestaurantRealtimeSession
     
-    session_manager = TestRealtimeSession()
+    session_manager = RestaurantRealtimeSession()
     
     try:
         # Initialize the realtime agent
@@ -268,29 +268,33 @@ async def test_realtime_websocket(websocket: WebSocket):
                             # Handle text input from frontend
                             text = message.get("text")
                             if text and hasattr(session_manager.session, 'send_text'):
-                                print(f"[TestRealtime WS] Sending text: {text}")
-                                await session_manager.session.send_text(text)
+                                print(f"[RestaurantAgent WS] Sending text: {text}")
+                                await session_manager.send_text(text)
                             elif text:
-                                print(f"[TestRealtime WS] Text message not supported yet: {text}")
+                                print(f"[RestaurantAgent WS] Text message not supported yet: {text}")
                                 
                         elif msg_type == "audio_chunk":
-                            # Forward audio to realtime session
-                            audio_data = message.get("data")
-                            if audio_data:
-                                await session_manager.process_audio_chunk(audio_data)
+                            # Forward base64-encoded PCM16 audio to realtime session
+                            audio_base64 = message.get("audio")
+                            if audio_base64:
+                                # RealtimeAgent expects base64-encoded PCM16
+                                await session_manager.send_audio(audio_base64)
                                 
                         elif msg_type == "end_session":
-                            print(f"[TestRealtime WS] Ending session {session_id}")
+                            print(f"[RestaurantAgent WS] Ending session {session_id}")
                             break
                             
                     elif "bytes" in data:
                         # Handle binary audio data directly
-                        await session_manager.process_audio_chunk(data["bytes"])
+                        # Convert bytes to base64 for RealtimeAgent
+                        import base64
+                        audio_base64 = base64.b64encode(data["bytes"]).decode('utf-8')
+                        await session_manager.send_audio(audio_base64)
                         
             except WebSocketDisconnect:
-                print(f"[TestRealtime WS] Client disconnected: {session_id}")
+                print(f"[RestaurantAgent WS] Client disconnected: {session_id}")
             except Exception as e:
-                print(f"[TestRealtime WS] Error handling incoming: {e}")
+                print(f"[RestaurantAgent WS] Error handling incoming: {e}")
                 
         async def handle_outgoing():
             """Handle outgoing events from realtime session"""
@@ -305,7 +309,7 @@ async def test_realtime_websocket(websocket: WebSocket):
                         await websocket.send_json(event)
                         
             except Exception as e:
-                print(f"[TestRealtime WS] Error handling outgoing: {e}")
+                print(f"[RestaurantAgent WS] Error handling outgoing: {e}")
                 
         # Run both tasks concurrently
         await asyncio.gather(
@@ -314,14 +318,14 @@ async def test_realtime_websocket(websocket: WebSocket):
         )
         
     except Exception as e:
-        print(f"[TestRealtime WS] Session error: {e}")
+        print(f"[RestaurantAgent WS] Session error: {e}")
         await websocket.send_json({
             "type": "error",
             "error": str(e)
         })
     finally:
         await session_manager.stop_session()
-        print(f"[TestRealtime WS] Session closed: {session_id}")
+        print(f"[RestaurantAgent WS] Session closed: {session_id}")
         try:
             await websocket.close()
         except:

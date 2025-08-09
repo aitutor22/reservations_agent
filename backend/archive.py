@@ -138,8 +138,6 @@ class TestRealtimeSession:
                             # Audio chunk - don't print binary data
                             delta = raw_data.get('delta', '')
                             if delta:
-                                # Just note that audio was received without printing the data
-                                print(f"[TestRealtime] Audio chunk received ({len(delta)} bytes)")
                                 yield {
                                     "type": "audio_chunk",
                                     "data": delta
@@ -154,21 +152,16 @@ class TestRealtimeSession:
                                 "type": "session_created"
                             }
                             
-                        elif inner_type == 'session.updated':
-                            # Session config updated - don't print the whole config
-                            print("[TestRealtime] Session configuration updated")
+                        # elif inner_type == 'session.updated':
+                        #     # Session config updated - don't print the whole config
+                        #     print("[TestRealtime] Session configuration updated")
                             
-                        elif inner_type == 'response.done':
-                            print("[TestRealtime] Response complete")
+                        # elif inner_type == 'response.done':
+                        #     print("[TestRealtime] Response complete")
                             
                         elif inner_type == 'rate_limits.updated':
                             # Skip rate limit updates
                             pass
-                            
-                        else:
-                            # For other inner types, just log the type
-                            if inner_type:
-                                print(f"[TestRealtime] Event: {inner_type}")
                                 
                 elif event_type == "audio":
                     # Audio event with binary data - don't print the data
@@ -203,97 +196,10 @@ class TestRealtimeSession:
                     self.is_running = False
                     break
                     
-                else:
-                    # For truly unhandled events, print minimal info
-                    print(f"[TestRealtime] Unhandled event type: {event_type}")
-                    
     async def stop_session(self):
         """Stop the realtime session"""
-        print("[TestRealtime] Stopping session...")
         self.is_running = False
         if self.session:
             # Close the session properly
             # This depends on SDK implementation
             pass
-        print("[TestRealtime] Session stopped")
-
-
-async def test_realtime_agent():
-    """Test function to run the realtime agent standalone"""
-    print("\n" + "="*60)
-    print("Testing Realtime Agent")
-    print("="*60)
-    
-    session_manager = TestRealtimeSession()
-    
-    try:
-        # Initialize and start session
-        await session_manager.initialize()
-        session = await session_manager.start_session()
-        
-        print("\nSession is ready! Sending test messages...")
-        print("-"*60)
-        
-        # Send test messages to trigger responses
-        test_messages = [
-            "Hello! How are you?",
-            "What time is it?",
-            "What are your hours?",
-            "Can you tell me about the restaurant?"
-        ]
-        
-        async def send_test_messages():
-            """Send test text messages to the agent"""
-            await asyncio.sleep(1)  # Wait for session to be fully ready
-            
-            for message in test_messages:
-                print(f"\n[Test] Sending: {message}")
-                
-                # Send text message to the session
-                # Check which method is available
-                if hasattr(session_manager.session, 'send_text'):
-                    await session_manager.session.send_text(message)
-                    print(f"[Test] Message sent via send_text")
-                elif hasattr(session_manager.session, 'send_message'):
-                    await session_manager.session.send_message(message)
-                    print(f"[Test] Message sent via send_message")
-                elif hasattr(session_manager.session, 'send'):
-                    # Try sending as a dict
-                    await session_manager.session.send({"text": message})
-                    print(f"[Test] Message sent via send")
-                else:
-                    print(f"[Test] Warning: No suitable send method found on session")
-                    print(f"[Test] Available methods: {dir(session_manager.session)}")
-                
-                # Wait between messages
-                await asyncio.sleep(5)
-        
-        # Create a task to process events
-        async def process_all_events():
-            """Process all events from the session"""
-            async for event in session_manager.process_events():
-                if event["type"] == "error":
-                    print(f"\nError occurred: {event['error']}")
-                    break
-        
-        # Run both tasks concurrently
-        await asyncio.gather(
-            send_test_messages(),
-            process_all_events()
-        )
-                
-    except KeyboardInterrupt:
-        print("\n\nInterrupted by user")
-    except Exception as e:
-        print(f"\nError in test: {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        await session_manager.stop_session()
-        print("\nTest completed")
-        print("="*60)
-
-
-if __name__ == "__main__":
-    # Run the test
-    asyncio.run(test_realtime_agent())
