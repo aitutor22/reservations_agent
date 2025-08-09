@@ -85,6 +85,8 @@ async def handle_websocket_connection(websocket: WebSocket, session_id: str):
                     # Echo the text message back
                     text_content = message.get("text", "")
                     logger.info(f"Processing text message: {text_content}")
+                    print('received and call backend api')
+                    # call backend api
                     
                     # Send echo response
                     await manager.send_message(websocket, {
