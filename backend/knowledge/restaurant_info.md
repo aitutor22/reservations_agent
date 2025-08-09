@@ -1,7 +1,7 @@
-# Ichiban Ramen House - Restaurant Information
+# Sakura Ramen House - Restaurant Information
 
 ## About Us
-Ichiban Ramen House is Singapore's most popular authentic Japanese ramen restaurant, serving handcrafted noodles and rich broths since 2018. Due to our popularity, we operate on a first-come, first-served basis during peak hours.
+Sakura Ramen House is Singapore's most popular authentic Japanese ramen restaurant, serving handcrafted noodles and rich broths since 2018. Due to our popularity, we operate on a first-come, first-served basis during peak hours.
 
 ## Operating Hours
 - Monday-Thursday: 11:30 AM - 9:30 PM

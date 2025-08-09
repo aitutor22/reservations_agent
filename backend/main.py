@@ -31,8 +31,12 @@ async def lifespan(app: FastAPI):
     try:
         # Initialize knowledge base
         print("Initializing knowledge base...")
-        vector_store_id = setup_knowledge_base()
-        print(f"Knowledge base ready with vector store: {vector_store_id}")
+        try:
+            vector_store_id = setup_knowledge_base()
+            print(f"Knowledge base ready with vector store: {vector_store_id}")
+        except Exception as kb_error:
+            print(f"Warning: Could not initialize knowledge base: {kb_error}")
+            print("Continuing without vector store support...")
         
         # Initialize OpenAI service
         service = get_openai_service()

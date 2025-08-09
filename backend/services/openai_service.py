@@ -103,7 +103,7 @@ class OpenAIService:
             self.current_state = AgentState.RESERVATION
             response = (
                 "I understand you'd like to make a reservation. "
-                "I should mention that Ichiban Ramen House operates on a walk-in basis only - "
+                "I should mention that Sakura Ramen House operates on a walk-in basis only - "
                 "we don't accept reservations. However, we have a digital queue system "
                 "that lets you join the waitlist and receive an SMS when your table is ready. "
                 "Would you like to know more about our typical wait times?"
@@ -115,10 +115,10 @@ class OpenAIService:
             if result["success"]:
                 response = result["response"]
             else:
-                response = "I'm here to help! What would you like to know about Ichiban Ramen House?"
+                response = "I'm here to help! What would you like to know about Sakura Ramen House?"
         else:
             response = (
-                "Welcome to Ichiban Ramen House! I'm your virtual assistant. "
+                "Welcome to Sakura Ramen House! I'm your virtual assistant. "
                 "I can help you with information about our menu, hours, location, "
                 "or explain our walk-in queue system. What would you like to know?"
             )
