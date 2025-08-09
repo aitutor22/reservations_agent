@@ -14,7 +14,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import config
-from agents.information_agent import InformationAgent
+from custom_agents.information_agent import InformationAgent
 
 
 class AgentState(Enum):

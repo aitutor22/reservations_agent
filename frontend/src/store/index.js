@@ -367,6 +367,111 @@ export default new Vuex.Store({
           role: 'system'
         })
       }
+    },
+    
+    // Test RealtimeAgent via WebSocket (Backend-routed)
+    async testRealtimeAgent({ commit }) {
+      commit('SET_CONNECTION_STATUS', 'connecting')
+      commit('ADD_MESSAGE', {
+        content: 'Connecting to RealtimeAgent test endpoint...',
+        role: 'system'
+      })
+      
+      try {
+        // Connect to the test WebSocket endpoint
+        const ws = new WebSocket('ws://localhost:8000/ws/realtime/test')
+        
+        ws.onopen = () => {
+          console.log('Connected to RealtimeAgent test')
+          commit('SET_CONNECTION_STATUS', 'connected')
+          commit('ADD_MESSAGE', {
+            content: 'Connected to RealtimeAgent! You can now type messages to test the agent.',
+            role: 'system'
+          })
+          
+          // Store WebSocket for sending messages
+          commit('SET_WEBSOCKET', ws)
+        }
+        
+        ws.onmessage = (event) => {
+          try {
+            // Try to parse as JSON first
+            const data = JSON.parse(event.data)
+            console.log('RealtimeAgent event:', data)
+            
+            if (data.type === 'assistant_transcript') {
+              commit('ADD_MESSAGE', {
+                content: data.transcript,
+                role: 'agent'
+              })
+            } else if (data.type === 'user_transcript') {
+              // Update the last user message with transcription
+              console.log('User transcript:', data.transcript)
+            } else if (data.type === 'error') {
+              commit('ADD_MESSAGE', {
+                content: `Error: ${data.error}`,
+                role: 'system'
+              })
+            } else if (data.type === 'session_started') {
+              console.log('Session started:', data.session_id)
+            }
+          } catch (e) {
+            // If not JSON, might be binary audio data
+            if (event.data instanceof Blob) {
+              console.log('Received audio data:', event.data.size, 'bytes')
+              // TODO: Play audio response
+            }
+          }
+        }
+        
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error)
+          commit('SET_CONNECTION_STATUS', 'error')
+          commit('ADD_MESSAGE', {
+            content: 'Connection error. Please check console.',
+            role: 'system'
+          })
+        }
+        
+        ws.onclose = () => {
+          console.log('WebSocket closed')
+          commit('SET_CONNECTION_STATUS', 'idle')
+          commit('ADD_MESSAGE', {
+            content: 'Disconnected from RealtimeAgent.',
+            role: 'system'
+          })
+        }
+        
+      } catch (error) {
+        console.error('Failed to connect to RealtimeAgent:', error)
+        commit('SET_CONNECTION_STATUS', 'error')
+        commit('ADD_MESSAGE', {
+          content: `Failed to connect: ${error.message}`,
+          role: 'system'
+        })
+      }
+    },
+    
+    // Send message to RealtimeAgent test
+    sendToRealtimeAgent({ state, commit }, message) {
+      if (state.websocket && state.websocket.readyState === WebSocket.OPEN) {
+        // Add user message to UI
+        commit('ADD_MESSAGE', {
+          content: message,
+          role: 'user'
+        })
+        
+        // Send as text message to RealtimeAgent
+        state.websocket.send(JSON.stringify({
+          type: 'text_message',
+          text: message
+        }))
+      } else {
+        commit('ADD_MESSAGE', {
+          content: 'Not connected to RealtimeAgent. Use testRealtimeAgent() first.',
+          role: 'system'
+        })
+      }
     }
   },
   modules: {

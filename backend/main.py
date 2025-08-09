@@ -41,50 +41,50 @@ async def lifespan(app: FastAPI):
         print(f"Warning: Could not initialize database: {db_error}")
         print("Continuing without database support...")
     
-    try:
-        # List all vector stores from OpenAI
-        print("\n" + "="*60)
-        print("Fetching Vector Stores from OpenAI API...")
-        print("="*60)
+    # try:
+    #     # List all vector stores from OpenAI
+    #     print("\n" + "="*60)
+    #     print("Fetching Vector Stores from OpenAI API...")
+    #     print("="*60)
         
-        api_key = os.getenv("OPENAI_API_KEY") or config.OPENAI_API_KEY
-        if api_key:
-            async with httpx.AsyncClient() as client:
-                try:
-                    response = await client.get(
-                        "https://api.openai.com/v1/vector_stores",
-                        headers={
-                            "Authorization": f"Bearer {api_key}",
-                            "OpenAI-Beta": "assistants=v2"
-                        }
-                    )
+    #     api_key = os.getenv("OPENAI_API_KEY") or config.OPENAI_API_KEY
+    #     if api_key:
+    #         async with httpx.AsyncClient() as client:
+    #             try:
+    #                 response = await client.get(
+    #                     "https://api.openai.com/v1/vector_stores",
+    #                     headers={
+    #                         "Authorization": f"Bearer {api_key}",
+    #                         "OpenAI-Beta": "assistants=v2"
+    #                     }
+    #                 )
                     
-                    if response.status_code == 200:
-                        vector_stores = response.json()
-                        print(f"\nTotal Vector Stores: {len(vector_stores.get('data', []))}")
-                        print("-"*60)
+    #                 if response.status_code == 200:
+    #                     vector_stores = response.json()
+    #                     print(f"\nTotal Vector Stores: {len(vector_stores.get('data', []))}")
+    #                     print("-"*60)
                         
-                        for store in vector_stores.get('data', []):
-                            print(f"ID: {store.get('id')}")
-                            print(f"Name: {store.get('name', 'Unnamed')}")
-                            print(f"Created: {store.get('created_at')}")
-                            print(f"File Counts: {store.get('file_counts', {})}")
-                            print(f"Status: {store.get('status')}")
-                            print(f"Bytes: {store.get('usage_bytes', 0)}")
-                            print("-"*40)
+    #                     for store in vector_stores.get('data', []):
+    #                         print(f"ID: {store.get('id')}")
+    #                         print(f"Name: {store.get('name', 'Unnamed')}")
+    #                         print(f"Created: {store.get('created_at')}")
+    #                         print(f"File Counts: {store.get('file_counts', {})}")
+    #                         print(f"Status: {store.get('status')}")
+    #                         print(f"Bytes: {store.get('usage_bytes', 0)}")
+    #                         print("-"*40)
                         
-                        if not vector_stores.get('data'):
-                            print("No vector stores found.")
-                    else:
-                        print(f"Failed to fetch vector stores: {response.status_code}")
-                        print(f"Response: {response.text}")
+    #                     if not vector_stores.get('data'):
+    #                         print("No vector stores found.")
+    #                 else:
+    #                     print(f"Failed to fetch vector stores: {response.status_code}")
+    #                     print(f"Response: {response.text}")
                         
-                except Exception as e:
-                    print(f"Error fetching vector stores: {e}")
-        else:
-            print("No OpenAI API key configured - skipping vector store listing")
+    #             except Exception as e:
+    #                 print(f"Error fetching vector stores: {e}")
+    #     else:
+    #         print("No OpenAI API key configured - skipping vector store listing")
         
-        print("="*60 + "\n")
+    #     print("="*60 + "\n")
         
         # Initialize knowledge base
         print("Initializing knowledge base...")
@@ -146,7 +146,6 @@ async def health_check():
 
 
 # OpenAI Realtime API ephemeral token generation
-# this is hit at the start of the conversation (voice)
 @app.post("/api/realtime/session")
 async def create_realtime_session():
     """
@@ -226,6 +225,107 @@ async def create_realtime_session():
             status_code=500,
             detail=f"Failed to create realtime session: {str(e)}"
         )
+
+
+# Test Realtime Agent endpoint
+@app.websocket("/ws/realtime/test")
+async def test_realtime_websocket(websocket: WebSocket):
+    """WebSocket endpoint for testing RealtimeAgent with WebRTC audio"""
+    await websocket.accept()
+    session_id = str(uuid.uuid4())
+    
+    print(f"[TestRealtime WS] New connection: {session_id}")
+    
+    # Import here to avoid circular dependencies
+    from test_realtime_agent import TestRealtimeSession
+    
+    session_manager = TestRealtimeSession()
+    
+    try:
+        # Initialize the realtime agent
+        await session_manager.initialize()
+        await session_manager.start_session()
+        
+        # Send initial success message
+        await websocket.send_json({
+            "type": "session_started",
+            "session_id": session_id
+        })
+        
+        # Create tasks for bidirectional communication
+        async def handle_incoming():
+            """Handle incoming WebSocket messages (audio from browser)"""
+            try:
+                while True:
+                    data = await websocket.receive()
+                    
+                    if "text" in data:
+                        # Handle text messages
+                        message = json.loads(data["text"])
+                        msg_type = message.get("type")
+                        
+                        if msg_type == "text_message":
+                            # Handle text input from frontend
+                            text = message.get("text")
+                            if text and hasattr(session_manager.session, 'send_text'):
+                                print(f"[TestRealtime WS] Sending text: {text}")
+                                await session_manager.session.send_text(text)
+                            elif text:
+                                print(f"[TestRealtime WS] Text message not supported yet: {text}")
+                                
+                        elif msg_type == "audio_chunk":
+                            # Forward audio to realtime session
+                            audio_data = message.get("data")
+                            if audio_data:
+                                await session_manager.process_audio_chunk(audio_data)
+                                
+                        elif msg_type == "end_session":
+                            print(f"[TestRealtime WS] Ending session {session_id}")
+                            break
+                            
+                    elif "bytes" in data:
+                        # Handle binary audio data directly
+                        await session_manager.process_audio_chunk(data["bytes"])
+                        
+            except WebSocketDisconnect:
+                print(f"[TestRealtime WS] Client disconnected: {session_id}")
+            except Exception as e:
+                print(f"[TestRealtime WS] Error handling incoming: {e}")
+                
+        async def handle_outgoing():
+            """Handle outgoing events from realtime session"""
+            try:
+                async for event in session_manager.process_events():
+                    # Send events back to browser
+                    if event["type"] == "audio_chunk":
+                        # Send audio as binary
+                        await websocket.send_bytes(event["data"])
+                    else:
+                        # Send other events as JSON
+                        await websocket.send_json(event)
+                        
+            except Exception as e:
+                print(f"[TestRealtime WS] Error handling outgoing: {e}")
+                
+        # Run both tasks concurrently
+        await asyncio.gather(
+            handle_incoming(),
+            handle_outgoing()
+        )
+        
+    except Exception as e:
+        print(f"[TestRealtime WS] Session error: {e}")
+        await websocket.send_json({
+            "type": "error",
+            "error": str(e)
+        })
+    finally:
+        await session_manager.stop_session()
+        print(f"[TestRealtime WS] Session closed: {session_id}")
+        try:
+            await websocket.close()
+        except:
+            pass
 
 
 # Session management endpoints
