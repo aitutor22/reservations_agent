@@ -179,7 +179,7 @@ async def get_restaurant_info():
 
 @app.post("/api/restaurant/query")
 async def query_restaurant_info(data: dict):
-    """Query restaurant information using knowledge agent"""
+    """Query restaurant information using information agent"""
     query = data.get("query")
     
     if not query:
@@ -187,9 +187,9 @@ async def query_restaurant_info(data: dict):
     
     service = get_openai_service()
     
-    # Process query with knowledge agent directly
-    if service.knowledge_agent:
-        result = service.knowledge_agent.process_query(query)
+    # Process query with information agent directly
+    if service.information_agent:
+        result = service.information_agent.process_query(query)
         
         if result["success"]:
             return {
@@ -203,7 +203,7 @@ async def query_restaurant_info(data: dict):
                 "error": result.get("error")
             }
     else:
-        raise HTTPException(status_code=503, detail="Knowledge service unavailable")
+        raise HTTPException(status_code=503, detail="Information service unavailable")
 
 
 # Admin endpoints for testing

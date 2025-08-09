@@ -14,7 +14,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import config
-from agents.knowledge_agent import KnowledgeAgent
+from agents.information_agent import InformationAgent
 
 
 class AgentState(Enum):
@@ -73,7 +73,7 @@ class OpenAIService:
         config.validate()
         
         # Initialize agents
-        self.knowledge_agent: Optional[KnowledgeAgent] = None
+        self.information_agent: Optional[InformationAgent] = None
         self.current_state = AgentState.GREETING
         self.session_context: Dict[str, Any] = {}
         
@@ -83,9 +83,9 @@ class OpenAIService:
     def _initialize_agents(self):
         """Initialize all agent instances"""
         try:
-            # Initialize Knowledge Agent
-            self.knowledge_agent = KnowledgeAgent()
-            print("Knowledge Agent initialized successfully")
+            # Initialize Information Agent
+            self.information_agent = InformationAgent()
+            print("Information Agent initialized successfully")
             
             # TODO: Initialize Reservation Agent when implemented
             # self.reservation_agent = ReservationAgent()
@@ -111,7 +111,7 @@ class OpenAIService:
         elif intent == AgentState.KNOWLEDGE.value:
             self.current_state = AgentState.KNOWLEDGE
             # Process with knowledge agent
-            result = self.knowledge_agent.process_query(user_input)
+            result = self.information_agent.process_query(user_input)
             if result["success"]:
                 response = result["response"]
             else:
@@ -136,7 +136,7 @@ class OpenAIService:
             return await self.process_greeting(user_input)
         
         elif self.current_state == AgentState.KNOWLEDGE:
-            result = self.knowledge_agent.process_query(user_input)
+            result = self.information_agent.process_query(user_input)
             if result["success"]:
                 response = result["response"]
             else:
@@ -175,7 +175,7 @@ class OpenAIService:
         return {
             "state": self.current_state.value,
             "context": self.session_context,
-            "thread_id": self.knowledge_agent.thread_id if self.knowledge_agent else None
+            "thread_id": self.information_agent.thread_id if self.information_agent else None
         }
     
     def reset_session(self):
@@ -183,13 +183,13 @@ class OpenAIService:
         self.current_state = AgentState.GREETING
         self.session_context = {}
         
-        if self.knowledge_agent:
-            self.knowledge_agent.clear_thread()
+        if self.information_agent:
+            self.information_agent.clear_thread()
     
     def cleanup(self):
         """Clean up resources"""
-        if self.knowledge_agent:
-            self.knowledge_agent.cleanup()
+        if self.information_agent:
+            self.information_agent.cleanup()
 
 
 # Singleton instance

@@ -1,6 +1,10 @@
 """
-Knowledge Agent for Restaurant Information
-Handles queries about menu, hours, location, and general restaurant information
+Information Agent for Restaurant Information
+Handles all restaurant information queries including menu, hours, location, 
+specials, policies, and general restaurant information. 
+
+This agent combines both simple quick responses for basic info and 
+vector store search for complex queries.
 """
 
 from typing import Optional, Dict, Any, List
@@ -17,11 +21,14 @@ from config import config
 from knowledge.vector_store_manager import VectorStoreManager
 
 
-class KnowledgeAgent:
-    """Agent that answers questions about the restaurant using vector store search"""
+class InformationAgent:
+    """
+    Agent that answers all restaurant information questions.
+    Handles both simple quick responses and complex queries using vector store search.
+    """
     
     def __init__(self, api_key: Optional[str] = None, vector_store_id: Optional[str] = None):
-        """Initialize the Knowledge Agent with OpenAI client and vector store"""
+        """Initialize the Information Agent with OpenAI client and vector store"""
         self.api_key = api_key or config.OPENAI_API_KEY
         if not self.api_key:
             raise ValueError("OpenAI API key is required")
@@ -44,14 +51,48 @@ class KnowledgeAgent:
         self.assistant: Optional[Assistant] = None
         self.thread_id: Optional[str] = None
         
+        # Quick responses for basic info
+        self._init_quick_responses()
+        
         # Create the assistant
         self._create_assistant()
+    
+    def _init_quick_responses(self):
+        """Initialize quick responses for common basic queries"""
+        self.quick_responses = {
+            "hours": {
+                "keywords": ["hours", "open", "close", "operating", "time", "when"],
+                "response": f"{config.RESTAURANT_NAME} is open daily from 11:30 AM to 10:00 PM (last order at 9:30 PM). We're closed on Mondays for maintenance."
+            },
+            "location": {
+                "keywords": ["location", "address", "where", "directions", "how to get"],
+                "response": f"We're located at {config.RESTAURANT_ADDRESS}. We're right by the Singapore River with easy access via Clarke Quay MRT station."
+            },
+            "phone": {
+                "keywords": ["phone", "number", "call", "contact"],
+                "response": f"You can reach us at {config.RESTAURANT_PHONE}. However, we operate on a walk-in basis and don't take reservations over the phone."
+            },
+            "reservations": {
+                "keywords": ["reservation", "book", "booking", "table"],
+                "response": "We operate on a walk-in basis only. However, you can join our digital queue system when you arrive to minimize your wait time!"
+            }
+        }
+    
+    def _get_quick_response(self, query: str) -> Optional[str]:
+        """Check if query matches a quick response pattern"""
+        query_lower = query.lower()
+        
+        for response_type, data in self.quick_responses.items():
+            if any(keyword in query_lower for keyword in data["keywords"]):
+                return data["response"]
+        
+        return None
     
     def _create_assistant(self):
         """Create the OpenAI Assistant with FileSearch tool"""
         try:
             self.assistant = self.client.beta.assistants.create(
-                name="Sakura Ramen House Knowledge Agent",
+                name="Sakura Ramen House Information Agent",
                 instructions=config.KNOWLEDGE_AGENT_INSTRUCTIONS,
                 model=config.OPENAI_MODEL,
                 tools=[{
@@ -66,9 +107,9 @@ class KnowledgeAgent:
                     }
                 }
             )
-            print(f"Knowledge Agent created with ID: {self.assistant.id}")
+            print(f"Information Agent created with ID: {self.assistant.id}")
         except Exception as e:
-            print(f"Error creating Knowledge Agent: {e}")
+            print(f"Error creating Information Agent: {e}")
             raise
     
     def create_thread(self) -> str:
@@ -84,7 +125,17 @@ class KnowledgeAgent:
     def process_query(self, query: str, thread_id: Optional[str] = None) -> Dict[str, Any]:
         """Process a user query and return the response"""
         try:
-            # Use provided thread or create new one
+            # Check for quick responses first
+            quick_response = self._get_quick_response(query)
+            if quick_response:
+                return {
+                    "success": True,
+                    "response": quick_response,
+                    "source": "quick_response",
+                    "thread_id": self.thread_id
+                }
+            
+            # Use provided thread or create new one for complex queries
             if thread_id:
                 self.thread_id = thread_id
             elif not self.thread_id:
@@ -129,6 +180,7 @@ class KnowledgeAgent:
                 return {
                     "success": True,
                     "response": response_content,
+                    "source": "vector_search",
                     "thread_id": self.thread_id
                 }
             else:
@@ -186,9 +238,9 @@ class KnowledgeAgent:
 
 
 # Example usage and testing
-def test_knowledge_agent():
-    """Test the Knowledge Agent with sample queries"""
-    agent = KnowledgeAgent()
+def test_information_agent():
+    """Test the Information Agent with sample queries"""
+    agent = InformationAgent()
     
     # Test queries
     test_queries = [
@@ -201,14 +253,15 @@ def test_knowledge_agent():
         "Do you have vegetarian options?"
     ]
     
-    print("Testing Knowledge Agent with sample queries...\n")
+    print("Testing Information Agent with sample queries...\n")
     
     for query in test_queries:
         print(f"Q: {query}")
         result = agent.process_query(query)
         
         if result["success"]:
-            print(f"A: {result['response']}\n")
+            source = result.get('source', 'unknown')
+            print(f"A ({source}): {result['response']}\n")
         else:
             print(f"Error: {result['error']}\n")
     
@@ -221,6 +274,6 @@ if __name__ == "__main__":
     import sys
     
     if "--test" in sys.argv:
-        test_knowledge_agent()
+        test_information_agent()
     else:
-        print("Knowledge Agent module loaded. Use --test flag to run tests.")
+        print("Information Agent module loaded. Use --test flag to run tests.")
