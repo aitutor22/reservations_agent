@@ -1,5 +1,5 @@
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'error';
-export type AgentState = 'greeting' | 'general-info' | 'reservation' | 'confirmation';
+export type AgentState = 'greeting' | 'information' | 'reservation' | 'confirmation';
 
 export interface TranscriptMessage {
   id: string;

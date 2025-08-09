@@ -202,7 +202,7 @@ typescriptinterface AppState {
   
   // Conversation
   transcript: TranscriptMessage[];
-  currentAgentState: 'greeting' | 'general-info' | 'reservation' | 'confirmation';
+  currentAgentState: 'greeting' | 'information' | 'reservation' | 'confirmation';
   
   // Reservation Data
   pendingReservation: Partial<Reservation> | null;
