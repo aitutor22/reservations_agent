@@ -1,0 +1,76 @@
+# Dependencies
+node_modules/
+*.pyc
+__pycache__/
+.Python
+venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Testing
+coverage/
+.coverage
+.pytest_cache/
+.tox/
+*.cover
+.hypothesis/
+
+# Frontend specific
+frontend/dist
+frontend/dist-ssr
+frontend/*.local
+frontend/.vite
+
+# Backend specific
+backend/.pytest_cache
+backend/instance/
+backend/.mypy_cache/
+backend/.ruff_cache/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+.temp/
+tmp/
+
+# OS files
+Thumbs.db
+Desktop.ini
+
+# Package manager locks (keep for consistency)
+# Uncomment if you want to ignore lock files
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
