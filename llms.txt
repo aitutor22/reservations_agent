@@ -1,16 +1,16 @@
-# Restaurant Voice Agent
+# Ramen Restaurant Voice Agent
 
-> AI-powered voice agent for restaurant reservations using OpenAI Realtime API
+> AI-powered voice agent for ramen restaurant reservations using OpenAI Realtime API
 
 ## Architecture
 - Frontend: React + TypeScript with WebSocket for real-time audio
 - Backend: FastAPI with OpenAI Agents SDK
 - Voice Processing: OpenAI Realtime API (speech-to-speech)
-- Integration: Future ePOS system for reservation management
+- Integration: Future POS system for reservation management
 
 ## Key Components
 - Main greeting agent routes to specialized agents
-- General info agent handles hours, location, specials  
+- General info agent handles hours, location, daily specials, ramen varieties  
 - Reservation agent manages bookings with tool calling
 - WebSocket maintains persistent audio connection
 
@@ -33,6 +33,8 @@ interface Reservation {
   email?: string;
   confirmationNumber: string;
   specialRequests?: string;
+  seatingPreference?: 'counter' | 'table' | 'booth' | 'no-preference';
+  dietaryRestrictions?: string[];
   status: 'confirmed' | 'cancelled' | 'modified';
 }
 
@@ -44,9 +46,9 @@ interface AudioChunk {
 ```
 
 ## Conversation Flow
-1. Greeting: "Welcome to [Restaurant Name], how can I help you?"
+1. Greeting: "Welcome to [Ramen Restaurant Name], how can I help you?"
 2. Intent Detection: Routes to appropriate agent
-3. Information Gathering: Collects necessary details
+3. Information Gathering: Collects necessary details (including seating preferences for counter, booth, etc.)
 4. Action Execution: Creates/modifies/cancels reservation
 5. Confirmation: Provides confirmation number and summary
 

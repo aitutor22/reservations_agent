@@ -1,10 +1,10 @@
 Product Requirements Document (PRD)
-Restaurant Voice Reservation Agent - MVP
+Ramen Restaurant Voice Reservation Agent - MVP
 1. Executive Summary
-Build a web-based voice agent for restaurant reservations that allows customers to inquire about restaurant information and manage reservations through natural voice conversations. The MVP will use a web interface for voice interactions, with plans to integrate Twilio for phone-based interactions in the future.
+Build a web-based voice agent for ramen restaurant reservations that allows customers to inquire about restaurant information, ramen varieties, and manage reservations through natural voice conversations. The MVP will use a web interface for voice interactions, with plans to integrate Twilio for phone-based interactions in the future.
 2. Product Overview
 2.1 Vision
-Create a seamless, voice-first experience for restaurant customers to get information and make reservations without waiting on hold or navigating complex phone menus.
+Create a seamless, voice-first experience for ramen restaurant customers to get information about ramen varieties and make reservations without waiting on hold or navigating complex phone menus.
 2.2 Goals
 
 Reduce staff workload by automating 80% of routine calls
@@ -39,8 +39,10 @@ General Information Queries
 
 Operating hours
 Location and directions
-Current specials and promotions
-Basic menu questions
+Daily specials and limited-time ramen
+Ramen varieties (tonkotsu, shoyu, miso, shio)
+Customization options (noodle firmness, broth richness)
+Dietary accommodations (vegetarian, vegan ramen options)
 
 
 Reservation Management
@@ -151,6 +153,7 @@ typescriptinterface ReservationSummaryProps {
     partySize: number;
     name: string;
     confirmationNumber?: string;
+    seatingPreference?: 'counter' | 'table' | 'booth' | 'no-preference';
   };
   isVisible: boolean;
 }
@@ -278,8 +281,8 @@ Session timeout after 5 minutes of inactivity
 7. Future Enhancements
 
 Phase 2: Twilio integration for phone calls
-Phase 3: Multi-language support (Mandarin, Malay)
-Phase 4: Visual menu browsing during conversation
+Phase 3: Multi-language support (Japanese, Mandarin, Korean)
+Phase 4: Visual menu browsing during conversation (with images of ramen bowls and toppings)
 Phase 5: Integration with table management system
 
 8. Implementation Phases
@@ -317,7 +320,8 @@ General Information
 
  Correctly answers hours of operation
  Provides accurate location information
- Mentions current specials when asked
+ Mentions daily specials and limited-time ramen when asked
+ Explains different ramen broths and toppings
 
 
 Reservation Flow

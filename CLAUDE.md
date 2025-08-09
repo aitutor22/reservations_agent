@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-Restaurant Voice Reservation Agent - An AI-powered voice agent for restaurant reservations using OpenAI Realtime API. This web-based application allows customers to inquire about restaurant information and manage reservations through natural voice conversations.
+Ramen Restaurant Voice Reservation Agent - An AI-powered voice agent for ramen restaurant reservations using OpenAI Realtime API. This web-based application allows customers to inquire about restaurant information, ramen menu options, and manage reservations through natural voice conversations.
 
 ## Architecture
 
@@ -18,13 +18,13 @@ Restaurant Voice Reservation Agent - An AI-powered voice agent for restaurant re
 - **Backend**: FastAPI with OpenAI Agents SDK
   - Voice Processing: OpenAI Realtime API (speech-to-speech)
   - WebSocket for persistent audio connection
-  - Integration: ePOS system for reservation management (future)
+  - Integration: POS system for reservation management (future)
 
 ### Key Components
 
 1. **Agent Architecture**
    - Main greeting agent routes to specialized agents
-   - General info agent handles hours, location, specials
+   - General info agent handles hours, location, daily specials, ramen menu
    - Reservation agent manages bookings with tool calling
    - Multi-turn conversation support with context retention
 
@@ -115,8 +115,8 @@ pytest
 ## Conversation Flows
 
 ### General Information Flow
-1. User asks about hours/location/specials
-2. General info agent responds with accurate information
+1. User asks about hours/location/daily specials/ramen varieties
+2. General info agent responds with accurate ramen restaurant information
 3. Agent asks if user needs anything else
 4. Routes to reservation agent if needed
 
@@ -143,6 +143,8 @@ interface Reservation {
   email?: string;
   confirmationNumber: string;
   specialRequests?: string;
+  seatingPreference?: 'counter' | 'table' | 'booth' | 'no-preference';
+  dietaryRestrictions?: string[];
   status: 'confirmed' | 'cancelled' | 'modified';
 }
 
@@ -235,11 +237,11 @@ The `llms.txt` file is a markdown-formatted document placed in your project root
 
 ### Why It Matters for This Project
 
-For our restaurant voice agent, having comprehensive LLM-readable documentation means:
+For our ramen restaurant voice agent, having comprehensive LLM-readable documentation means:
 
 1. **Faster Development**: When you or other developers use AI assistants (GitHub Copilot, Cursor, Claude, etc.), they'll have immediate context about the voice agent architecture, FastAPI endpoints, and OpenAI Realtime API integration.
 
-2. **Better AI Suggestions**: LLMs can provide more accurate code completions and suggestions when they understand the reservation flow, agent handoff patterns, and ePOS integration requirements.
+2. **Better AI Suggestions**: LLMs can provide more accurate code completions and suggestions when they understand the reservation flow, agent handoff patterns, and POS integration requirements.
 
 3. **Easier Onboarding**: New team members using AI tools can quickly understand the codebase structure, reducing ramp-up time.
 
@@ -249,7 +251,7 @@ For our restaurant voice agent, having comprehensive LLM-readable documentation 
 
 By maintaining an `llms.txt` file alongside traditional documentation:
 - AI assistants understand your specific implementation of OpenAI's voice agents
-- Code suggestions align with your restaurant domain logic
+- Code suggestions align with your ramen restaurant domain logic
 - Debugging assistance includes context about your audio pipeline
 - Refactoring suggestions maintain your architectural patterns
 
