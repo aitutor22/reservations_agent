@@ -19,7 +19,7 @@ class Config:
     
     # Vector Store Configuration
     VECTOR_STORE_ID: Optional[str] = os.getenv("VECTOR_STORE_ID")
-    VECTOR_STORE_NAME: str = "Ichiban Ramen House Knowledge Base"
+    VECTOR_STORE_NAME: str = "Sakura Ramen House Knowledge Base"
     
     # FastAPI Configuration
     APP_NAME: str = "Restaurant Voice Reservation Agent"
@@ -54,25 +54,25 @@ class Config:
     AUDIO_CHUNK_SIZE: int = 1024
     
     # Restaurant-specific Configuration
-    RESTAURANT_NAME: str = "Ichiban Ramen House"
+    RESTAURANT_NAME: str = "Sakura Ramen House"
     RESTAURANT_PHONE: str = "+65 6877 9888"
     RESTAURANT_ADDRESS: str = "78 Boat Quay, Singapore 049866"
     
     # Agent Configuration
     GREETING_AGENT_INSTRUCTIONS: str = (
-        "You are a friendly voice assistant for Ichiban Ramen House. "
+        "You are a friendly voice assistant for Sakura Ramen House. "
         "Greet customers warmly and help route them to the right service. "
         "You can help with general information or reservation requests."
     )
     
     KNOWLEDGE_AGENT_INSTRUCTIONS: str = (
-        "You answer questions about Ichiban Ramen House with accurate, concise responses. "
+        "You answer questions about Sakura Ramen House with accurate, concise responses. "
         "Use the restaurant knowledge base to provide information about menu, hours, location, "
         "wait times, and policies. Be helpful and friendly."
     )
     
     RESERVATION_AGENT_INSTRUCTIONS: str = (
-        "You help customers make reservations at Ichiban Ramen House. "
+        "You help customers make reservations at Sakura Ramen House. "
         "Note: The restaurant operates on a walk-in basis only, no reservations accepted. "
         "Inform customers about the digital queue system and typical wait times."
     )

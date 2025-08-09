@@ -51,7 +51,7 @@ class KnowledgeAgent:
         """Create the OpenAI Assistant with FileSearch tool"""
         try:
             self.assistant = self.client.beta.assistants.create(
-                name="Ichiban Ramen House Knowledge Agent",
+                name="Sakura Ramen House Knowledge Agent",
                 instructions=config.KNOWLEDGE_AGENT_INSTRUCTIONS,
                 model=config.OPENAI_MODEL,
                 tools=[{
