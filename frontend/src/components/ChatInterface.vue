@@ -46,6 +46,10 @@ export default {
   },
   mounted() {
     this.$store.dispatch('initializeChat')
+  },
+  beforeDestroy() {
+    // Clean up WebSocket connection when component is destroyed
+    this.$store.dispatch('disconnectWebSocket')
   }
 }
 </script>

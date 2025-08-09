@@ -1,5 +1,6 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
+import websocketService from '@/services/websocket'
 
 Vue.use(Vuex)
 
@@ -11,7 +12,8 @@ export default new Vuex.Store({
     sessionId: null,
     currentAgentState: 'greeting',
     pendingReservation: null,
-    confirmedReservation: null
+    confirmedReservation: null,
+    websocket: null
   },
   getters: {
     sortedMessages: state => {
@@ -48,6 +50,9 @@ export default new Vuex.Store({
     SET_CONFIRMED_RESERVATION(state, reservation) {
       state.confirmedReservation = reservation
     },
+    SET_WEBSOCKET(state, websocket) {
+      state.websocket = websocket
+    },
     CLEAR_MESSAGES(state) {
       state.messages = []
     },
@@ -59,68 +64,130 @@ export default new Vuex.Store({
       state.currentAgentState = 'greeting'
       state.pendingReservation = null
       state.confirmedReservation = null
+      state.websocket = null
     }
   },
   actions: {
-    initializeChat({ commit }) {
+    async initializeChat({ commit, dispatch }) {
       commit('SET_CONNECTION_STATUS', 'connecting')
       
-      setTimeout(() => {
-        commit('SET_CONNECTION_STATUS', 'connected')
-        commit('SET_SESSION_ID', 'demo-session-' + Date.now())
+      try {
+        // Create a new session first
+        const response = await fetch('http://localhost:8000/api/session/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
         
-        setTimeout(() => {
+        if (!response.ok) {
+          throw new Error('Failed to create session')
+        }
+        
+        const data = await response.json()
+        const sessionId = data.session_id
+        
+        commit('SET_SESSION_ID', sessionId)
+        commit('SET_WEBSOCKET', websocketService)
+        
+        // Set up WebSocket event listeners
+        websocketService.on('connected', () => {
+          commit('SET_CONNECTION_STATUS', 'connected')
+        })
+        
+        websocketService.on('disconnected', () => {
+          commit('SET_CONNECTION_STATUS', 'idle')
+        })
+        
+        websocketService.on('reconnecting', ({ attempt, maxAttempts }) => {
+          commit('SET_CONNECTION_STATUS', 'connecting')
+          console.log(`Reconnecting... (${attempt}/${maxAttempts})`)
+        })
+        
+        websocketService.on('textResponse', ({ text }) => {
+          commit('SET_TYPING', false)
           commit('ADD_MESSAGE', {
-            content: 'Hello! Welcome to our restaurant. I can help you with information about our hours, location, or making a reservation. How can I assist you today?',
+            content: text,
             role: 'agent'
           })
-        }, 1000)
-      }, 1500)
+        })
+        
+        websocketService.on('error', (error) => {
+          console.error('WebSocket error:', error)
+          commit('SET_CONNECTION_STATUS', 'error')
+        })
+        
+        // Connect to WebSocket
+        await websocketService.connect(sessionId)
+        
+        // Send initial greeting after connection
+        setTimeout(() => {
+          commit('ADD_MESSAGE', {
+            content: 'Hello! Welcome to Ichiban Ramen House. I can help you with information about our hours, location, or making a reservation. How can I assist you today?',
+            role: 'agent'
+          })
+        }, 500)
+        
+      } catch (error) {
+        console.error('Failed to initialize chat:', error)
+        commit('SET_CONNECTION_STATUS', 'error')
+        
+        // Fallback message
+        commit('ADD_MESSAGE', {
+          content: 'Sorry, I\'m having trouble connecting to the server. Please try again later.',
+          role: 'agent'
+        })
+      }
     },
     
-    sendMessage({ commit, dispatch }, messageContent) {
+    sendMessage({ commit, state }, messageContent) {
+      // Add user message to chat
       commit('ADD_MESSAGE', {
         content: messageContent,
         role: 'user'
       })
       
-      commit('SET_TYPING', true)
-      
-      setTimeout(() => {
-        dispatch('generateAgentResponse', messageContent)
-      }, 1000)
-    },
-    
-    generateAgentResponse({ commit, state }, userMessage) {
-      const lowerMessage = userMessage.toLowerCase()
-      let response = ''
-      
-      if (lowerMessage.includes('hour') || lowerMessage.includes('open') || lowerMessage.includes('close')) {
-        response = 'We are open Monday through Thursday from 11:30 AM to 10:00 PM, Friday and Saturday from 11:30 AM to 11:00 PM, and Sunday from 12:00 PM to 9:00 PM.'
-      } else if (lowerMessage.includes('location') || lowerMessage.includes('address') || lowerMessage.includes('where')) {
-        response = 'We are located at 123 Main Street, Downtown District. We\'re just two blocks from the Central Station, with convenient parking available.'
-      } else if (lowerMessage.includes('special') || lowerMessage.includes('menu') || lowerMessage.includes('food')) {
-        response = 'Today\'s specials include our signature Grilled Salmon with lemon butter sauce and our Chef\'s Special Pasta. Would you like to make a reservation to try them?'
-      } else if (lowerMessage.includes('reservation') || lowerMessage.includes('book') || lowerMessage.includes('table')) {
-        response = 'I\'d be happy to help you make a reservation. What date and time would you prefer, and how many people will be in your party?'
-        commit('SET_AGENT_STATE', 'reservation')
-      } else if (state.currentAgentState === 'reservation') {
-        response = 'Great! Let me check availability for that. Could you please provide your name and phone number to confirm the reservation?'
+      // Send message via WebSocket
+      if (websocketService.isConnected) {
+        commit('SET_TYPING', true)
+        websocketService.sendTextMessage(messageContent)
       } else {
-        response = 'I can help you with information about our hours, location, daily specials, or making a reservation. What would you like to know?'
-      }
-      
-      setTimeout(() => {
-        commit('SET_TYPING', false)
+        // If not connected, show error message
         commit('ADD_MESSAGE', {
-          content: response,
+          content: 'Sorry, I\'m not connected to the server. Please wait while I reconnect...',
           role: 'agent'
         })
-      }, 500 + Math.random() * 1000)
+        
+        // Try to reconnect
+        if (state.sessionId) {
+          websocketService.connect(state.sessionId).catch(error => {
+            console.error('Failed to reconnect:', error)
+          })
+        }
+      }
     },
     
-    clearChat({ commit }) {
+    async disconnectWebSocket({ commit, state }) {
+      if (websocketService.isConnected) {
+        websocketService.disconnect()
+      }
+      
+      // End session on backend
+      if (state.sessionId) {
+        try {
+          await fetch(`http://localhost:8000/api/session/${state.sessionId}`, {
+            method: 'DELETE'
+          })
+        } catch (error) {
+          console.error('Failed to end session:', error)
+        }
+      }
+      
       commit('CLEAR_SESSION')
+    },
+    
+    clearChat({ dispatch }) {
+      dispatch('disconnectWebSocket')
     },
     
     updateConnectionStatus({ commit }, status) {
