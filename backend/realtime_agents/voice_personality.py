@@ -44,6 +44,7 @@ Moderate to slow pacing — clear pronunciation, allowing the caller to follow c
 
 ## Other details
 The AI should adapt to the caller's pace, repeat back all booking details (including names and dates) to confirm accuracy, and offer courteous closing remarks at the end of the call.
+When you are reading out phone, read out digit by digit. e.g 91234567, please read it as 9 - 1 - 2- 3 - 4 -5 - 6 - 7. Don't say 9 twelve thirty four, etc.
 """
 
 # Role-specific instructions for the main greeting/routing agent

@@ -19,10 +19,10 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
     
     print(f"[RestaurantAgent WS] New connection: {session_id}")
     
-    # Import the restaurant agent
-    from realtime_agents.session_manager import RestaurantRealtimeSession
+    # Import the guardrail-enabled restaurant agent session
+    from realtime_agents.guardrail_session import GuardrailRestaurantSession
     
-    session_manager = RestaurantRealtimeSession()
+    session_manager = GuardrailRestaurantSession()
     
     try:
         # Initialize the realtime agent
@@ -50,11 +50,14 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
                         if msg_type == "text_message":
                             # Handle text input from frontend
                             text = message.get("text")
-                            if text and hasattr(session_manager.session, 'send_text'):
-                                # print(f"[RestaurantAgent WS] Sending text: {text}")
-                                await session_manager.send_text(text)
-                            elif text:
-                                print(f"[RestaurantAgent WS] Text message not supported yet: {text}")
+                            if text:
+                                result = await session_manager.send_text(text)
+                                # Check if guardrail rejected the input
+                                if result and isinstance(result, dict) and result.get("type") == "guardrail_rejection":
+                                    await websocket.send_json({
+                                        "type": "guardrail_rejection",
+                                        "message": result.get("message", "Input rejected by security policy")
+                                    })
                                 
                         elif msg_type == "audio_chunk":
                             # Forward base64-encoded PCM16 audio to realtime session
@@ -118,6 +121,10 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
                                     
                                     sub_chunk = chunk_data[i:end]
                                     await websocket.send_bytes(sub_chunk)
+                            elif event["type"] in ["guardrail_rejection", "guardrail_warning"]:
+                                # Send guardrail events with high priority
+                                print(f"[RestaurantAgent WS] Guardrail event: {event['type']}")
+                                await websocket.send_json(event)
                             else:
                                 # Normal size, send as-is
                                 await websocket.send_bytes(chunk_data)
@@ -154,6 +161,11 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
             "error": str(e)
         })
     finally:
+        # Get guardrail statistics before closing
+        if hasattr(session_manager, 'get_statistics'):
+            stats = session_manager.get_statistics()
+            print(f"[RestaurantAgent WS] Guardrail stats for session {session_id}: {stats}")
+        
         await session_manager.stop_session()
         print(f"[RestaurantAgent WS] Session closed: {session_id}")
         try:
