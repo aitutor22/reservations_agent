@@ -35,6 +35,28 @@
       <p class="voice-hint">{{ buttonHint }}</p>
     </div>
 
+    <!-- Transcript Toggle Button -->
+    <button 
+      class="transcript-toggle"
+      @click="showTranscript = !showTranscript"
+      :title="showTranscript ? 'Hide transcript' : 'Show transcript'"
+    >
+      <svg 
+        width="24" 
+        height="24" 
+        viewBox="0 0 24 24" 
+        fill="none" 
+        stroke="currentColor" 
+        stroke-width="2"
+      >
+        <path v-if="showTranscript" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+        <circle v-if="showTranscript" cx="12" cy="12" r="3"></circle>
+        <path v-if="!showTranscript" d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+        <line v-if="!showTranscript" x1="1" y1="1" x2="23" y2="23"></line>
+      </svg>
+      <span class="toggle-label">{{ showTranscript ? 'Hide' : 'Show' }} Transcript</span>
+    </button>
+
     <!-- Transcript Display (minimal) -->
     <div class="transcript-container" v-if="showTranscript">
       <div class="transcript-messages">
@@ -98,7 +120,7 @@ export default {
       mediaRecorder: null,      // Not used - kept for reference
       audioContext: null,        // Web Audio API context for processing
       audioProcessor: null,      // ScriptProcessor node for real-time conversion
-      showTranscript: true,
+      showTranscript: false,     // Default to hidden for cleaner UI
       mediaStream: null         // Reference to microphone stream for cleanup
     }
   },
@@ -454,6 +476,41 @@ export default {
   opacity: 0.9;
 }
 
+.transcript-toggle {
+  position: absolute;
+  bottom: 2rem;
+  right: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 2rem;
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+  }
+  
+  svg {
+    width: 20px;
+    height: 20px;
+  }
+  
+  .toggle-label {
+    @media (max-width: 640px) {
+      display: none; // Hide label on mobile, show icon only
+    }
+  }
+}
+
 .transcript-container {
   position: absolute;
   bottom: 2rem;
@@ -569,6 +626,12 @@ export default {
   
   .voice-hint {
     font-size: 1rem;
+  }
+  
+  .transcript-toggle {
+    bottom: 1rem;
+    right: 1rem;
+    padding: 0.5rem 0.75rem;
   }
   
   .transcript-container {

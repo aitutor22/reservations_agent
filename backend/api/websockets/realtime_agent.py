@@ -95,11 +95,32 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
                         # Send events back to browser
                         if event["type"] == "audio_chunk":
                             # Send audio as binary
-                            chunk_size = len(event["data"])
-                            if chunk_size > 1024 * 1024:  # 1MB limit check
-                                print(f"[RestaurantAgent WS] WARNING: Audio chunk too large ({chunk_size} bytes), skipping")
-                                continue
-                            await websocket.send_bytes(event["data"])
+                            chunk_data = event["data"]
+                            chunk_size = len(chunk_data)
+                            
+                            # Safety check: If chunk is still too large, split it
+                            # This shouldn't happen with our 300KB limit, but provides safety
+                            MAX_SAFE_SIZE = 300 * 1024  # 300KB safe limit
+                            
+                            if chunk_size > MAX_SAFE_SIZE:
+                                print(f"[RestaurantAgent WS] WARNING: Large chunk ({chunk_size} bytes), splitting for safety")
+                                
+                                # Split into safe chunks respecting PCM16 boundaries
+                                safe_chunk_size = MAX_SAFE_SIZE
+                                if safe_chunk_size % 2 != 0:
+                                    safe_chunk_size -= 1  # Ensure even for PCM16
+                                
+                                for i in range(0, chunk_size, safe_chunk_size):
+                                    end = min(i + safe_chunk_size, chunk_size)
+                                    # Ensure we don't split a PCM16 sample
+                                    if end < chunk_size and (end - i) % 2 != 0:
+                                        end -= 1
+                                    
+                                    sub_chunk = chunk_data[i:end]
+                                    await websocket.send_bytes(sub_chunk)
+                            else:
+                                # Normal size, send as-is
+                                await websocket.send_bytes(chunk_data)
                         else:
                             # Send other events as JSON
                             await websocket.send_json(event)

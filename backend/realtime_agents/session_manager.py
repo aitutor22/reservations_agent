@@ -34,8 +34,9 @@ import numpy as np
 from agents.realtime import RealtimeRunner
 from .main_agent import main_agent, RESTAURANT_AGENT_CONFIG
 
-# Maximum size for WebSocket frames (512KB for safety, well under 1MB limit)
-MAX_WEBSOCKET_FRAME_SIZE = 512 * 1024  # 512KB in bytes
+# Maximum size for WebSocket frames (300KB for safety, well under 1MB limit)
+# Reduced to 300KB to handle cases with handoff silence + large audio responses
+MAX_WEBSOCKET_FRAME_SIZE = 300 * 1024  # 300KB in bytes
 
 # Audio configuration for silence generation
 AUDIO_SAMPLE_RATE = 24000  # 24kHz as required by OpenAI
@@ -175,21 +176,42 @@ class RestaurantRealtimeSession:
                                     audio_bytes = base64.b64decode(delta)
                                     audio_size = len(audio_bytes)
                                     
+                                    # Log size for debugging handoff issues
+                                    if audio_size > 100000:  # Log large chunks (>100KB)
+                                        print(f"[RestaurantAgent] Received large audio delta: {audio_size} bytes")
+                                    
                                     # Check if audio chunk is too large for WebSocket
                                     if audio_size > MAX_WEBSOCKET_FRAME_SIZE:
-                                        print(f"[RestaurantAgent] Large audio chunk ({audio_size} bytes), splitting...")
-                                        # Split into smaller chunks
+                                        print(f"[RestaurantAgent] Large audio chunk ({audio_size} bytes), splitting into safe chunks...")
+                                        
+                                        # Calculate chunk size ensuring even byte boundary for PCM16
                                         chunk_size = MAX_WEBSOCKET_FRAME_SIZE
+                                        if chunk_size % 2 != 0:
+                                            chunk_size -= 1  # Make it even for PCM16 sample alignment
+                                        
+                                        # Split into chunks respecting PCM16 sample boundaries
+                                        num_chunks = 0
                                         for i in range(0, audio_size, chunk_size):
-                                            chunk = audio_bytes[i:i + chunk_size]
-                                            # print(f"[RestaurantAgent] Sending audio chunk {i//chunk_size + 1} ({len(chunk)} bytes)")
+                                            end = min(i + chunk_size, audio_size)
+                                            
+                                            # Ensure we don't split a PCM16 sample (2 bytes)
+                                            if end < audio_size and (end - i) % 2 != 0:
+                                                end -= 1
+                                            
+                                            chunk = audio_bytes[i:end]
+                                            num_chunks += 1
+                                            print(f"[RestaurantAgent] Sending audio chunk {num_chunks} ({len(chunk)} bytes)")
+                                            
                                             yield {
                                                 "type": "audio_chunk",
                                                 "data": chunk
                                             }
                                     else:
                                         # Normal size, send as-is
-                                        # print(f"[RestaurantAgent] Sending audio chunk ({audio_size} bytes)")
+                                        # Verify even byte count for PCM16
+                                        if audio_size % 2 != 0:
+                                            print(f"[RestaurantAgent] WARNING: Odd byte count ({audio_size}), may cause audio artifacts")
+                                        
                                         yield {
                                             "type": "audio_chunk",
                                             "data": audio_bytes
@@ -221,17 +243,29 @@ class RestaurantRealtimeSession:
                                 'specialist' in tool_name_lower
                             )
                             
+                            # Check if this is a transfer back to the main agent
+                            # Main agent does silent routing, so we don't need silence
+                            is_main_agent_transfer = (
+                                'ramenassistant' in tool_name_lower or 
+                                'main' in tool_name_lower or
+                                'routing' in tool_name_lower
+                            )
+                            
                             if is_handoff:
-                                print(f"[RestaurantAgent] HANDOFF DETECTED to: {tool_name}")
-                                self.handoff_pending = True
-                                
-                                # Send silence buffer immediately after handoff
-                                silence_buffer = self.generate_silence_buffer()
-                                print(f"[RestaurantAgent] Inserting {HANDOFF_DELAY_SECONDS}s silence ({len(silence_buffer)} bytes)")
-                                yield {
-                                    "type": "audio_chunk",
-                                    "data": silence_buffer
-                                }
+                                if is_main_agent_transfer:
+                                    print(f"[RestaurantAgent] Transfer to MAIN AGENT (routing): {tool_name} - no silence needed")
+                                    # Don't inject silence for main agent transfers (silent routing)
+                                else:
+                                    print(f"[RestaurantAgent] HANDOFF DETECTED to specialist: {tool_name}")
+                                    self.handoff_pending = True
+                                    
+                                    # Send silence buffer immediately after handoff to specialist
+                                    silence_buffer = self.generate_silence_buffer()
+                                    print(f"[RestaurantAgent] Inserting {HANDOFF_DELAY_SECONDS}s silence ({len(silence_buffer)} bytes)")
+                                    yield {
+                                        "type": "audio_chunk",
+                                        "data": silence_buffer
+                                    }
                             else:
                                 print(f"[RestaurantAgent] Regular tool call (not handoff): {tool_name}")
                             
