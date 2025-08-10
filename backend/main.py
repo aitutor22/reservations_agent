@@ -2,27 +2,19 @@
 FastAPI Main Application
 Restaurant Voice Reservation Agent Backend
 """
-import base64
-import asyncio
-import json
-import uuid
-from datetime import datetime
-import httpx
 import os
-
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional, List
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from config import config
 from knowledge.vector_store_manager import setup_knowledge_base
-from database import get_db, init_db, close_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from models.reservation import ReservationCreate, ReservationUpdate, ReservationResponse
-from services.reservation_service import get_reservation_service
+from database import init_db, close_db
 
+# Import routers
+from api.routes import reservations
+from api.websockets import realtime_agent
 
 
 @asynccontextmanager
@@ -38,63 +30,14 @@ async def lifespan(app: FastAPI):
         print(f"Warning: Could not initialize database: {db_error}")
         print("Continuing without database support...")
     
-    # try:
-    #     # List all vector stores from OpenAI
-    #     print("\n" + "="*60)
-    #     print("Fetching Vector Stores from OpenAI API...")
-    #     print("="*60)
-        
-    #     api_key = os.getenv("OPENAI_API_KEY") or config.OPENAI_API_KEY
-    #     if api_key:
-    #         async with httpx.AsyncClient() as client:
-    #             try:
-    #                 response = await client.get(
-    #                     "https://api.openai.com/v1/vector_stores",
-    #                     headers={
-    #                         "Authorization": f"Bearer {api_key}",
-    #                         "OpenAI-Beta": "assistants=v2"
-    #                     }
-    #                 )
-                    
-    #                 if response.status_code == 200:
-    #                     vector_stores = response.json()
-    #                     print(f"\nTotal Vector Stores: {len(vector_stores.get('data', []))}")
-    #                     print("-"*60)
-                        
-    #                     for store in vector_stores.get('data', []):
-    #                         print(f"ID: {store.get('id')}")
-    #                         print(f"Name: {store.get('name', 'Unnamed')}")
-    #                         print(f"Created: {store.get('created_at')}")
-    #                         print(f"File Counts: {store.get('file_counts', {})}")
-    #                         print(f"Status: {store.get('status')}")
-    #                         print(f"Bytes: {store.get('usage_bytes', 0)}")
-    #                         print("-"*40)
-                        
-    #                     if not vector_stores.get('data'):
-    #                         print("No vector stores found.")
-    #                 else:
-    #                     print(f"Failed to fetch vector stores: {response.status_code}")
-    #                     print(f"Response: {response.text}")
-                        
-    #             except Exception as e:
-    #                 print(f"Error fetching vector stores: {e}")
-    #     else:
-    #         print("No OpenAI API key configured - skipping vector store listing")
-        
-    #     print("="*60 + "\n")
-        
-        # Initialize knowledge base
-        print("Initializing knowledge base...")
-        try:
-            vector_store_id = setup_knowledge_base()
-            print(f"Knowledge base ready with vector store: {vector_store_id}")
-        except Exception as kb_error:
-            print(f"Warning: Could not initialize knowledge base: {kb_error}")
-            print("Continuing without vector store support...")
-        
-    except Exception as e:
-        print(f"Error during startup: {e}")
-        # Continue anyway to allow fixing configuration
+    # Initialize knowledge base
+    print("Initializing knowledge base...")
+    try:
+        vector_store_id = setup_knowledge_base()
+        print(f"Knowledge base ready with vector store: {vector_store_id}")
+    except Exception as kb_error:
+        print(f"Warning: Could not initialize knowledge base: {kb_error}")
+        print("Continuing without vector store support...")
     
     yield
     
@@ -123,292 +66,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# Health check endpoint
-@app.get("/api/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "service": config.APP_NAME,
-        "version": config.APP_VERSION,
-        "timestamp": datetime.utcnow().isoformat()
-    }
-
-
-
-# Restaurant Realtime Agent endpoint
-@app.websocket("/ws/realtime/agent")
-async def restaurant_realtime_websocket(websocket: WebSocket):
-    """WebSocket endpoint for Restaurant RealtimeAgent with voice capabilities"""
-    await websocket.accept()
-    session_id = str(uuid.uuid4())
-    
-    print(f"[RestaurantAgent WS] New connection: {session_id}")
-    
-    # Import the restaurant agent
-    from realtime_agents.session_manager import RestaurantRealtimeSession
-    
-    session_manager = RestaurantRealtimeSession()
-    
-    try:
-        # Initialize the realtime agent
-        await session_manager.initialize()
-        await session_manager.start_session()
-        
-        # Send initial success message
-        await websocket.send_json({
-            "type": "session_started",
-            "session_id": session_id
-        })
-        
-        # Create tasks for bidirectional communication
-        async def handle_incoming():
-            """Handle incoming WebSocket messages (audio from browser)"""
-            try:
-                while True:
-                    data = await websocket.receive()
-                    
-                    if "text" in data:
-                        # Handle text messages
-                        message = json.loads(data["text"])
-                        msg_type = message.get("type")
-                        
-                        if msg_type == "text_message":
-                            # Handle text input from frontend
-                            text = message.get("text")
-                            if text and hasattr(session_manager.session, 'send_text'):
-                                # print(f"[RestaurantAgent WS] Sending text: {text}")
-                                await session_manager.send_text(text)
-                            elif text:
-                                print(f"[RestaurantAgent WS] Text message not supported yet: {text}")
-                                
-                        elif msg_type == "audio_chunk":
-                            # Forward base64-encoded PCM16 audio to realtime session
-                            audio_base64 = message.get("audio")
-                            if audio_base64:
-                                # RealtimeAgent expects base64-encoded PCM16
-                                await session_manager.send_audio(audio_base64)
-                                
-                        elif msg_type == "end_audio":
-                            # User finished sending audio
-                            print(f"[RestaurantAgent WS] End of audio input")
-                            # The session will process this with VAD
-                            
-                        elif msg_type == "end_session":
-                            print(f"[RestaurantAgent WS] Ending session {session_id}")
-                            break
-                            
-                    elif "bytes" in data:
-                        # Handle binary audio data directly
-                        # Convert bytes to base64 for RealtimeAgent
-                        audio_base64 = base64.b64encode(data["bytes"]).decode('utf-8')
-                        await session_manager.send_audio(audio_base64)
-                        
-            except WebSocketDisconnect:
-                print(f"[RestaurantAgent WS] Client disconnected: {session_id}")
-                raise  # Re-raise to exit the task properly
-            except Exception as e:
-                print(f"[RestaurantAgent WS] Error handling incoming: {e}")
-                # Don't crash on errors, just log and continue
-                # This allows the session to recover from transient issues
-                await asyncio.sleep(0.1)  # Small delay to prevent tight error loops
-                
-        async def handle_outgoing():
-            """Handle outgoing events from realtime session"""
-            try:
-                async for event in session_manager.process_events():
-                    try:
-                        # Send events back to browser
-                        if event["type"] == "audio_chunk":
-                            # Send audio as binary
-                            chunk_size = len(event["data"])
-                            if chunk_size > 1024 * 1024:  # 1MB limit check
-                                print(f"[RestaurantAgent WS] WARNING: Audio chunk too large ({chunk_size} bytes), skipping")
-                                continue
-                            await websocket.send_bytes(event["data"])
-                        else:
-                            # Send other events as JSON
-                            await websocket.send_json(event)
-                    except Exception as send_error:
-                        print(f"[RestaurantAgent WS] Error sending event: {send_error}")
-                        # Continue processing other events
-                        
-            except Exception as e:
-                print(f"[RestaurantAgent WS] Error handling outgoing: {e}")
-                raise  # Re-raise to exit the task
-                
-        # Run both tasks concurrently with error isolation
-        # return_exceptions=True prevents one task failure from canceling the other
-        results = await asyncio.gather(
-            handle_incoming(),
-            handle_outgoing(),
-            return_exceptions=True
-        )
-        
-        # Check if any task failed
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                task_name = "handle_incoming" if i == 0 else "handle_outgoing"
-                print(f"[RestaurantAgent WS] Task {task_name} failed: {result}")
-                # Continue - the other task may still be running
-        
-    except Exception as e:
-        print(f"[RestaurantAgent WS] Session error: {e}")
-        await websocket.send_json({
-            "type": "error",
-            "error": str(e)
-        })
-    finally:
-        await session_manager.stop_session()
-        print(f"[RestaurantAgent WS] Session closed: {session_id}")
-        try:
-            await websocket.close()
-        except:
-            pass
-
-
-
-# Restaurant information endpoints (REST fallback)
-@app.get("/api/restaurant/info")
-async def get_restaurant_info():
-    """Get basic restaurant information"""
-    return {
-        "name": config.RESTAURANT_NAME,
-        "phone": config.RESTAURANT_PHONE,
-        "address": config.RESTAURANT_ADDRESS,
-        "hours": {
-            "monday_thursday": "11:30 AM - 9:30 PM",
-            "friday_saturday": "11:30 AM - 10:30 PM",
-            "sunday": "11:30 AM - 9:00 PM"
-        }
-    }
-
-
-@app.post("/api/restaurant/query")
-async def query_restaurant_info(data: dict):
-    """Query restaurant information using information agent"""
-    query = data.get("query")
-    
-    if not query:
-        raise HTTPException(status_code=400, detail="Query is required")
-    
-    # TODO: Implement with information agent or remove if not needed
-    raise HTTPException(status_code=503, detail="Information service not yet implemented")
-
-
-# Reservation endpoints
-@app.post("/api/reservations", response_model=ReservationResponse)
-async def create_reservation(
-    reservation: ReservationCreate,
-    db: AsyncSession = Depends(get_db)
-):
-    """Create a new reservation"""
-    try:
-        service = await get_reservation_service(db)
-        result = await service.create_reservation(reservation)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create reservation: {str(e)}")
-
-
-@app.get("/api/reservations/{phone_number}", response_model=ReservationResponse)
-async def get_reservation(
-    phone_number: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """Get reservation by phone number"""
-    service = await get_reservation_service(db)
-    reservation = await service.get_reservation_by_phone(phone_number)
-    
-    if not reservation:
-        raise HTTPException(status_code=404, detail="Reservation not found")
-    
-    return reservation
-
-
-@app.put("/api/reservations/{phone_number}", response_model=ReservationResponse)
-async def update_reservation(
-    phone_number: str,
-    update_data: ReservationUpdate,
-    db: AsyncSession = Depends(get_db)
-):
-    """Update an existing reservation"""
-    service = await get_reservation_service(db)
-    reservation = await service.update_reservation(phone_number, update_data)
-    
-    if not reservation:
-        raise HTTPException(status_code=404, detail="Reservation not found")
-    
-    return reservation
-
-
-@app.delete("/api/reservations/{phone_number}")
-async def cancel_reservation(
-    phone_number: str,
-    db: AsyncSession = Depends(get_db)
-):
-    """Cancel a reservation"""
-    service = await get_reservation_service(db)
-    deleted = await service.delete_reservation(phone_number)
-    
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Reservation not found")
-    
-    return {"message": "Reservation cancelled successfully"}
-
-
-@app.get("/api/reservations", response_model=List[ReservationResponse])
-async def list_reservations(
-    skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=500, description="Maximum number of records to return"),
-    date: Optional[str] = Query(None, description="Filter by date (YYYY-MM-DD)"),
-    db: AsyncSession = Depends(get_db)
-):
-    """List all reservations with optional filtering"""
-    service = await get_reservation_service(db)
-    reservations = await service.list_all_reservations(skip=skip, limit=limit, filter_date=date)
-    return reservations
-
-
-@app.post("/api/reservations/check-availability")
-async def check_availability(
-    data: dict,
-    db: AsyncSession = Depends(get_db)
-):
-    """Check availability for a given date/time"""
-    check_date = data.get("date")
-    check_time = data.get("time")
-    party_size = data.get("party_size", 2)
-    
-    if not check_date or not check_time:
-        raise HTTPException(status_code=400, detail="Date and time are required")
-    
-    service = await get_reservation_service(db)
-    availability = await service.check_availability(check_date, check_time, party_size)
-    return availability
-
-
-# Admin endpoints for testing
-@app.post("/api/admin/reset")
-async def reset_service():
-    """Reset the service (admin endpoint)"""
-    # Currently just a placeholder - can be used for resetting any services if needed
-    return {
-        "status": "reset",
-        "message": "Service reset successfully"
-    }
-
-
-# if __name__ == "__main__":
-#     import uvicorn
-    
-#     print(f"Starting server on {config.HOST}:{config.PORT}")
-#     uvicorn.run(
-#         "main:app",
-#         host=config.HOST,
-#         port=config.PORT,
-#         reload=config.DEBUG
-#     )
+# Include routers
+app.include_router(reservations.router)
+app.include_router(realtime_agent.router)

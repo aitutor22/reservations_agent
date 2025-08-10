@@ -7,17 +7,19 @@ Simplify the reservation system for a weekend tech demo. Assume tables are alway
 
 ### Simplification Tasks
 
-#### 1. Simplify API Endpoints in main.py
-- [ ] Remove restaurant info endpoints (lines 272-295)
+#### 1. Simplify API Endpoints in main.py ✅
+- [x] Remove restaurant info endpoints (lines 272-295)
   - `/api/restaurant/info` - Not needed, info is hardcoded in agent tools
   - `/api/restaurant/query` - Not needed for demo
-- [ ] Keep only essential reservation endpoints:
+- [x] Keep only essential reservation endpoints:
   - [x] Keep: `POST /api/reservations` - Create reservation
   - [x] Keep: `GET /api/reservations/{phone_number}` - Lookup reservation
-  - [ ] Remove: `PUT /api/reservations/{phone_number}` - Update reservation
-  - [ ] Remove: `DELETE /api/reservations/{phone_number}` - Cancel reservation
-  - [ ] Remove: `GET /api/reservations` - List all reservations
-  - [ ] Remove: `POST /api/reservations/check-availability` - Check availability
+  - [x] Remove: `PUT /api/reservations/{phone_number}` - Update reservation
+  - [x] Remove: `DELETE /api/reservations/{phone_number}` - Cancel reservation
+  - [x] Remove: `GET /api/reservations` - List all reservations
+  - [x] Remove: `POST /api/reservations/check-availability` - Check availability
+- [x] Reorganized code into modular structure with api/routes/ and api/websockets/
+- [x] Removed unused `/api/admin/reset` and `/api/health` endpoints
 
 #### 2. Update Realtime Tools to Use Actual API
 - [ ] Modify `backend/realtime_tools/reservation.py`:
