@@ -9,7 +9,7 @@ from agents import function_tool
 @function_tool
 def check_availability(date: str, time: str, party_size: int) -> str:
     """
-    Check if a reservation slot is available.
+    Check if a reservation slot is available. Always call this before confirming any reservation.
     
     Args:
         date: Date in format YYYY-MM-DD
@@ -38,7 +38,7 @@ def check_availability(date: str, time: str, party_size: int) -> str:
 @function_tool
 def make_reservation(name: str, phone: str, date: str, time: str, party_size: int, special_requests: str = "") -> str:
     """
-    Create a reservation.
+    Create a reservation. Only call this after checking availability and collecting all required information.
     
     Args:
         name: Guest name

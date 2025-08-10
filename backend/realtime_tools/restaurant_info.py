@@ -17,7 +17,7 @@ def get_current_time() -> str:
 
 @function_tool
 def get_restaurant_hours() -> str:
-    """Get the restaurant operating hours."""
+    """Get the restaurant's current operating hours. Always call this when asked about opening times, closing times, or when we're open."""
     return """
     Sakura Ramen House hours:
     - Monday to Thursday: 11:30 AM - 9:30 PM
@@ -28,7 +28,7 @@ def get_restaurant_hours() -> str:
 
 @function_tool
 def get_restaurant_location() -> str:
-    """Get the restaurant location and contact information."""
+    """Get the restaurant's exact address and contact information. Always call this when asked about location, address, directions, or how to reach us."""
     return f"""
     Sakura Ramen House
     Address: {config.RESTAURANT_ADDRESS}
@@ -41,7 +41,7 @@ def get_restaurant_location() -> str:
 
 @function_tool
 def get_menu_info() -> str:
-    """Get information about our ramen menu."""
+    """Get detailed information about our ramen varieties, prices, and ingredients. Always call this when asked about food, menu items, or prices."""
     return """
     Our signature ramen varieties:
     
