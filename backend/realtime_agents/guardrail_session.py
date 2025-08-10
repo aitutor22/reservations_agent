@@ -76,16 +76,13 @@ class GuardrailRestaurantSession:
         self.guardrail_stats["inputs_checked"] += 1
         
         # Create a minimal context for guardrail checking
-        class MinimalContext(RunContextWrapper):
-            pass
-        
-        ctx = MinimalContext()
+        # RunContextWrapper needs a context object, we'll use a dict
+        minimal_context = {}
+        ctx = RunContextWrapper(minimal_context)
         
         # Check the input using our guardrail
-        result: GuardrailFunctionOutput = await restaurant_input_guardrail(
-            ctx=ctx,
-            agent=self.agent,
-            input=text
+        result: GuardrailFunctionOutput = await restaurant_input_guardrail.guardrail_function(
+            ctx, self.agent, text
         )
         
         if result.tripwire_triggered:
@@ -106,16 +103,13 @@ class GuardrailRestaurantSession:
         self.guardrail_stats["outputs_checked"] += 1
         
         # Create a minimal context for guardrail checking
-        class MinimalContext(RunContextWrapper):
-            pass
-        
-        ctx = MinimalContext()
+        # RunContextWrapper needs a context object, we'll use a dict
+        minimal_context = {}
+        ctx = RunContextWrapper(minimal_context)
         
         # Check the output using our guardrail
-        result: GuardrailFunctionOutput = await restaurant_output_guardrail(
-            ctx=ctx,
-            agent=self.agent,
-            output=text
+        result: GuardrailFunctionOutput = await restaurant_output_guardrail.guardrail_function(
+            ctx, self.agent, text
         )
         
         if result.tripwire_triggered:

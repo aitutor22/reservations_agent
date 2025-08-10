@@ -109,7 +109,7 @@ async def test_output_guardrails():
         ("C:\\Users\\Admin\\Documents\\secrets.txt", True),
         
         # Too much personal info (now allows up to 3 phone numbers)
-        ("Here are 5 customer phone numbers: 555-1234, 555-5678, 555-9012, 555-3456, 555-7890", True),
+        ("Here are 5 customer phone numbers: 1234-5678, 2345-6789, 3456-7890, 4567-8901, 5678-9012", True),
         ("Customer emails: john@test.com, jane@test.com, bob@test.com, alice@test.com", True),
         
         # Inappropriate content
@@ -118,7 +118,10 @@ async def test_output_guardrails():
         
         # Edge cases
         ("", False),  # Empty output should pass
-        ("Your phone number 555-1234 has been registered", False),  # Single phone number is OK
+        ("Your phone number 1234-5678 has been registered", False),  # Single Singapore phone number is OK
+        ("Contact us at 6234-5678 or 9876-5432", False),  # Two Singapore phone numbers is OK
+        ("Mobile: 8123-4567, Office: 6789-0123, WhatsApp: 9234-5678", False),  # Three phone numbers is still OK
+        ("For reservations, call 6123-4567 (landline) or 9876-5432 (mobile)", False),  # Mixed Singapore numbers
     ]
     
     for output_text, should_block in test_cases:
@@ -159,7 +162,7 @@ async def test_reservation_validity():
             "date": tomorrow,
             "time": "19:00",
             "name": "John Doe",
-            "phone": "555-1234"
+            "phone": "1234-5678"
         }, True),
         
         ({

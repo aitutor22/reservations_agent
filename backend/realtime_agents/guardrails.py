@@ -202,15 +202,19 @@ async def restaurant_output_guardrail(
     
     # Check for personal information that shouldn't be shared broadly
     if not tripwire_triggered:
-        # Phone number patterns (various formats)
+        # Phone number patterns (various formats including Singapore)
         phone_patterns = [
-            r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',  # 555-123-4567 or 555.123.4567
-            r'\b\d{3}[-.]?\d{4}\b',  # 555-1234 (shorter format)
-            r'\(\d{3}\)\s?\d{3}[-.]?\d{4}',  # (555) 123-4567
+            r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b',  # 555-123-4567 or 555.123.4567 (US format)
+            r'\(\d{3}\)\s?\d{3}[-.]?\d{4}',  # (555) 123-4567 (US with area code)
+            r'\b[689]\d{3}[-.]?\d{4}\b',  # 6123-4567, 8123-4567, 9123-4567 (Singapore mobile)
+            r'\b\d{4}[-.]?\d{4}\b',  # 1234-5678 or 1234.5678 (Singapore format)
         ]
-        phone_matches = []
+        # Use a set to avoid counting overlapping matches
+        phone_matches = set()
         for pattern in phone_patterns:
-            phone_matches.extend(re.findall(pattern, output_text))
+            matches = re.findall(pattern, output_text)
+            phone_matches.update(matches)
+        phone_matches = list(phone_matches)
         if len(phone_matches) > 3:  # Allow up to 3 phone numbers (being more lenient for examples)
             tripwire_triggered = True
             detected_issue = f"Output contains multiple phone numbers ({len(phone_matches)}), potential privacy issue"
