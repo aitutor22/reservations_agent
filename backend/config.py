@@ -77,6 +77,15 @@ class Config:
         "Inform customers about the digital queue system and typical wait times."
     )
     
+    # Database Configuration
+    DATABASE_URL: str = os.getenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/reservations"
+    )
+    DATABASE_POOL_SIZE: int = int(os.getenv("DATABASE_POOL_SIZE", "20"))
+    DATABASE_MAX_OVERFLOW: int = int(os.getenv("DATABASE_MAX_OVERFLOW", "10"))
+    DATABASE_POOL_RECYCLE: int = int(os.getenv("DATABASE_POOL_RECYCLE", "3600"))
+    
     # File paths
     BASE_DIR: Path = Path(__file__).parent
     KNOWLEDGE_DIR: Path = BASE_DIR / "knowledge"

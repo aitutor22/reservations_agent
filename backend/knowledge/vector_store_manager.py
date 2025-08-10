@@ -246,12 +246,3 @@ def setup_knowledge_base(api_key: Optional[str] = None) -> str:
     vector_store_id = manager.initialize_knowledge_base()
     print(f"Knowledge base initialized with vector store ID: {vector_store_id}")
     return vector_store_id
-
-
-if __name__ == "__main__":
-    # Example usage - initialize the knowledge base
-    try:
-        vector_store_id = setup_knowledge_base()
-        print(f"Setup complete! Vector store ID: {vector_store_id}")
-    except Exception as e:
-        print(f"Setup failed: {e}")

@@ -1,17 +1,17 @@
 <template>
   <div class="home">
-    <ChatInterface />
+    <VoiceInterface />
   </div>
 </template>
 
 <script>
 // @ is an alias to /src
-import ChatInterface from '@/components/ChatInterface.vue'
+import VoiceInterface from '@/components/VoiceInterface.vue'
 
 export default {
   name: 'HomeView',
   components: {
-    ChatInterface
+    VoiceInterface
   }
 }
 </script>
