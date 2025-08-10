@@ -3,8 +3,8 @@ Reservation Models
 Pydantic models for reservation data validation and serialization
 """
 
-from pydantic import BaseModel, Field, validator
-from typing import Optional, Dict, Any
+from pydantic import BaseModel, Field, validator, field_serializer, model_validator
+from typing import Optional, Dict, Any, Union
 from datetime import datetime, date, time
 import re
 
@@ -126,10 +126,44 @@ class ReservationUpdate(BaseModel):
         return v
 
 
-class ReservationResponse(ReservationBase):
+class ReservationResponse(BaseModel):
     """Model for reservation responses including timestamps"""
+    phone_number: str
+    name: str
+    reservation_date: Union[str, date]  # Accept both string and date
+    reservation_time: Union[str, time]  # Accept both string and time
+    party_size: int
+    other_info: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    
+    @model_validator(mode='before')
+    @classmethod
+    def convert_date_time(cls, values):
+        """Convert date and time objects to strings before validation"""
+        if isinstance(values, dict):
+            # Convert date to string if it's a date object
+            if 'reservation_date' in values and isinstance(values['reservation_date'], date):
+                values['reservation_date'] = values['reservation_date'].isoformat()
+            
+            # Convert time to string if it's a time object
+            if 'reservation_time' in values and isinstance(values['reservation_time'], time):
+                values['reservation_time'] = values['reservation_time'].isoformat()
+        return values
+    
+    @field_serializer('reservation_date')
+    def serialize_date(self, value: Any) -> str:
+        """Convert date object to string for JSON serialization"""
+        if isinstance(value, date):
+            return value.isoformat()
+        return str(value)
+    
+    @field_serializer('reservation_time')
+    def serialize_time(self, value: Any) -> str:
+        """Convert time object to string for JSON serialization"""
+        if isinstance(value, time):
+            return value.isoformat()
+        return str(value)
     
     class Config:
         from_attributes = True  # Enable ORM mode for SQLAlchemy models

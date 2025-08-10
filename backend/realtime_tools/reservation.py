@@ -2,28 +2,60 @@
 Reservation Management Tools
 Tools for checking availability and creating reservations
 
-ARCHITECTURE NOTE: Sync/Async Bridge Pattern
-----------------------------------------------
-This module uses a "sync wrapper around async implementation" pattern:
+ARCHITECTURE NOTE: Enhanced Sync/Async Bridge Pattern
+------------------------------------------------------
+This module uses an enhanced "sync wrapper around async implementation" pattern:
 
 1. @function_tool decorated functions MUST be synchronous (limitation of the decorator)
 2. Our API calls use httpx which REQUIRES async/await for non-blocking operations
-3. Solution: Sync functions use asyncio.run() to execute async implementations
+3. RealtimeAgent runs in an async context with an event loop already running
+4. Solution: Detect if there's a running loop and handle accordingly:
+   - If no loop: use asyncio.run() (standard sync context)
+   - If loop exists: use ThreadPoolExecutor to run in separate thread
 
 Example:
     @function_tool
     def tool_function(...):  # Sync function for the agent
-        return asyncio.run(_async_implementation(...))
+        return run_async_from_sync(_async_implementation(...))
     
     async def _async_implementation(...):  # Async function for API calls
         response = await httpx_client.post(...)
 
-This ensures the voice agent doesn't experience audio stuttering from blocked I/O.
+This ensures the voice agent doesn't experience audio stuttering from blocked I/O
+and works correctly whether called from sync or async context.
 """
 import asyncio
+import concurrent.futures
 import httpx
 from agents import function_tool
 from .api_client import get_api_client, format_phone_number
+
+
+def run_async_from_sync(coro):
+    """
+    Run an async function from a sync context, handling existing event loops.
+    
+    This helper function detects if we're already in an async context (event loop running)
+    and adapts accordingly:
+    - If no event loop is running: uses asyncio.run() normally
+    - If event loop is already running: uses ThreadPoolExecutor to run in a separate thread
+    
+    This is necessary because RealtimeAgent runs in an async context, but @function_tool
+    requires synchronous functions.
+    """
+    try:
+        # Try to get the running loop
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop - we're in a regular sync context
+        # Safe to use asyncio.run()
+        return asyncio.run(coro)
+    else:
+        # Already in async context - event loop is running
+        # Can't use asyncio.run(), so run in a separate thread
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(asyncio.run, coro)
+            return future.result()
 
 
 @function_tool
@@ -58,13 +90,14 @@ def make_reservation(name: str, phone: str, date: str, time: str, party_size: in
         special_requests: Any special requests or dietary restrictions
     
     Note: This is a synchronous wrapper function because @function_tool doesn't support async.
-    It calls the async implementation using asyncio.run().
+    It uses run_async_from_sync() to handle both sync and async contexts.
     """
-    # IMPORTANT: This sync/async bridge pattern is necessary because:
+    # IMPORTANT: Enhanced sync/async bridge pattern:
     # 1. The @function_tool decorator only supports synchronous functions
     # 2. httpx (our HTTP client) requires async/await for non-blocking API calls
-    # 3. asyncio.run() creates a new event loop to run the async function
-    return asyncio.run(_make_reservation_async(name, phone, date, time, party_size, special_requests))
+    # 3. RealtimeAgent runs in async context, so we can't always use asyncio.run()
+    # 4. run_async_from_sync() detects the context and adapts accordingly
+    return run_async_from_sync(_make_reservation_async(name, phone, date, time, party_size, special_requests))
 
 
 async def _make_reservation_async(name: str, phone: str, date: str, time: str, party_size: int, special_requests: str = "") -> str:

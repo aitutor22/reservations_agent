@@ -1,6 +1,45 @@
 # Backend TODO List - PostgreSQL Reservation System
 
-## WEEKEND DEMO SIMPLIFICATION (Priority)
+## CURRENT FOCUS: Enhanced Agent Handoffs with Entity Extraction
+
+### Goal
+Implement structured handoff data with automatic entity extraction to improve conversation flow and analytics.
+
+### Implementation Tasks
+
+#### 1. Handoff Data Models ⏳
+- [ ] Create `backend/realtime_agents/handoff_data.py`:
+  - [ ] ReservationHandoffData model with party_size, date, time extraction
+  - [ ] InformationHandoffData model with query_type and specific items
+  - [ ] EscalationHandoffData for complex issues
+
+#### 2. Handoff Callbacks ⏳
+- [ ] Create `backend/realtime_agents/handoff_callbacks.py`:
+  - [ ] on_reservation_handoff - Log extracted reservation entities
+  - [ ] on_information_handoff - Log information query details
+  - [ ] Analytics recording for handoff patterns
+
+#### 3. Update Main Agent ⏳
+- [ ] Modify `backend/realtime_agents/main_agent.py`:
+  - [ ] Replace basic realtime_handoff with entity extraction version
+  - [ ] Add input_type parameter with data models
+  - [ ] Add on_handoff callbacks
+  - [ ] Update instructions to guide entity extraction
+
+#### 4. Update Specialist Agents ⏳
+- [ ] Update reservation agent to acknowledge extracted data
+- [ ] Update information agent to use query type hints
+- [ ] Improve conversation flow with pre-extracted entities
+
+#### 5. Testing ⏳
+- [ ] Create `backend/test_handoff_enhanced.py`
+- [ ] Test entity extraction for various inputs
+- [ ] Verify callbacks are executed with correct data
+- [ ] Test conversation continuity with extracted entities
+
+---
+
+## WEEKEND DEMO SIMPLIFICATION (Completed ✅)
 
 ### Goal
 Simplify the reservation system for a weekend tech demo. Assume tables are always available and focus on core reservation creation/lookup functionality.
@@ -31,18 +70,18 @@ Simplify the reservation system for a weekend tech demo. Assume tables are alway
 - [x] Created `backend/realtime_tools/api_client.py` with singleton httpx client
 - [x] Added smart Singapore phone number formatting (8 digits → +65)
 
-#### 3. Phone Number Handling
+#### 3. Phone Number Handling ✅
 - [x] Keep phone number field in ReservationBase model (per user request)
 - [x] Keep phone number validation in Pydantic model
-- [ ] Consider relaxing validation for demo (optional)
+- [x] Consider relaxing validation for demo (optional)
 
-#### 4. Testing Checklist
-- [ ] Voice agent can check availability (mocked to always available)
-- [ ] Voice agent can create reservation via API
-- [ ] Reservation is persisted in database
-- [ ] Confirmation number is returned to user
-- [ ] Can lookup reservation by phone number
-- [ ] Error handling works properly
+#### 4. Testing Checklist ✅
+- [x] Voice agent can check availability (mocked to always available)
+- [x] Voice agent can create reservation via API
+- [x] Reservation is persisted in database
+- [x] Confirmation number is returned to user
+- [x] Can lookup reservation by phone number
+- [x] Error handling works properly
 
 ---
 
