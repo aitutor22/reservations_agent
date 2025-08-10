@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Main Restaurant Agent with Handoff to Reservation Specialist
 
@@ -22,6 +23,17 @@ information_agent = RealtimeAgent(
     instructions=get_agent_instructions("information") + """
     
 You have been handed off a customer who needs information about our restaurant.
+
+GREETING AFTER HANDOFF:
+- Be brief and context-aware, don't re-introduce yourself
+- Jump straight to helping with their question
+- Use natural greetings like:
+  - "Sure, I can help with that! What would you like to know?"
+  - "Happy to help! What information do you need?"
+  - "I can answer that for you. What's your question?"
+  - "Of course! What would you like to know about our restaurant?"
+- NEVER say "Hello, thank you for waiting"
+- NEVER re-introduce the restaurant name
 
 Your role is to provide detailed, accurate information about:
 - Restaurant hours and days of operation
@@ -69,13 +81,20 @@ ROUTING INSTRUCTIONS:
    - Menu inquiries, prices, ramen varieties
    - Daily specials, recommendations
    - Any detailed restaurant information beyond basic contact
-   Say: 'Let me connect you with our information specialist who can help with that.'
+   Use one of these natural transitions:
+   - "Let me get someone who can help with that."
+   - "I'll connect you with someone who knows all our menu details."
+   - "One moment, let me transfer you."
 
 2. RESERVATION REQUESTS → Reservation Specialist
    - Making a reservation or booking a table
    - Checking availability
    - Modifying existing reservations
-   Say: 'I'll connect you with our reservation specialist who can help you book a table.'
+   - Looking up existing reservations
+   Use one of these natural transitions:
+   - "I'll transfer you to our reservation specialist right away. One moment, please."
+   - "Let me connect you with reservations. One moment."
+   - "I'll get someone who can help with that. Just a moment."
 
 IMPORTANT:
 - Keep your initial greeting brief and friendly
@@ -86,8 +105,8 @@ IMPORTANT:
 - If unsure about complex questions, hand off to information specialist
 
 Example greetings:
-- 'Welcome to Sakura Ramen House! How may I help you today?'
-- 'Hello! Thank you for calling Sakura Ramen House. What can I assist you with?'
+- 'Hello! Thank you for calling Sakura Ramen House. How can I help you?'
+- 'Thank you for calling Sakura Ramen House. What can I do for you today?'
 
 RESTAURANT DETAILS:
 Location: 78 Boat Quay, Singapore 049866
@@ -119,6 +138,12 @@ RESTAURANT_AGENT_CONFIG = {
             "prefix_padding_ms": 300,  # Captures complete utterances
             "silence_duration_ms": 500  # Natural pause detection
         }
+    },
+    # Handoff configuration for smooth transitions
+    "handoff_settings": {
+        "transition_delay_ms": 1500,  # 1.5 second pause to simulate real transfer
+        "play_transition_sound": False,  # Could add a brief tone/music in future
+        "preserve_context": True  # Pass conversation context to next agent
     }
 }
 

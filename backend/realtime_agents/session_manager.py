@@ -1,17 +1,45 @@
 """
 Restaurant RealtimeSession Manager
 Manages the lifecycle and event processing for restaurant voice sessions
+
+HANDOFF AUDIO DELAY IMPLEMENTATION
+-----------------------------------
+Since the OpenAI Realtime API doesn't support direct pause insertion in speech synthesis,
+we implement a workaround by injecting silence buffers into the audio stream:
+
+1. Detection: Monitor for handoff tool calls in the event stream
+   - Tool names containing 'transfer', 'handoff', 'specialist', or 'sakura'
+   - Triggered by 'response.function_call_arguments.done' events
+
+2. Silence Generation: Create PCM16 silence buffer
+   - 2 seconds of zeros at 24kHz sample rate (48,000 samples)
+   - Converted to bytes for audio streaming
+
+3. Injection: Insert silence immediately after handoff detection
+   - Send silence buffer as audio_chunk to frontend
+   - Frontend plays silence, creating natural pause
+
+4. Recovery: Clear handoff flag when new agent starts speaking
+   - Detected when 'response.audio.delta' arrives after handoff
+
+This approach simulates realistic phone transfer delays without modifying
+the AI's speech patterns or requiring API changes.
 """
 
 import asyncio
 from typing import Optional, Dict, Any
 import base64
+import numpy as np
 
 from agents.realtime import RealtimeRunner
 from .main_agent import main_agent, RESTAURANT_AGENT_CONFIG
 
 # Maximum size for WebSocket frames (512KB for safety, well under 1MB limit)
 MAX_WEBSOCKET_FRAME_SIZE = 512 * 1024  # 512KB in bytes
+
+# Audio configuration for silence generation
+AUDIO_SAMPLE_RATE = 24000  # 24kHz as required by OpenAI
+HANDOFF_DELAY_SECONDS = 2.0  # 2 second pause after handoff
 
 
 class RestaurantRealtimeSession:
@@ -23,6 +51,7 @@ class RestaurantRealtimeSession:
         self.session = None
         self.session_context = None
         self.is_running = False
+        self.handoff_pending = False  # Flag to track if we need to insert silence
         
     async def initialize(self):
         """Initialize the restaurant realtime agent"""
@@ -61,6 +90,19 @@ class RestaurantRealtimeSession:
                 await self.session.send_message(text)
             else:
                 print(f"[RestaurantAgent] Text sending not supported")
+    
+    def generate_silence_buffer(self, duration_seconds: float = HANDOFF_DELAY_SECONDS) -> bytes:
+        """Generate a buffer of silence (zeros) for the specified duration
+        
+        Args:
+            duration_seconds: Duration of silence in seconds
+            
+        Returns:
+            Bytes representing PCM16 silence
+        """
+        num_samples = int(AUDIO_SAMPLE_RATE * duration_seconds)
+        silence_array = np.zeros(num_samples, dtype=np.int16)
+        return silence_array.tobytes()
     
     async def send_audio(self, audio_data):
         """Send audio chunk to the realtime session
@@ -123,6 +165,11 @@ class RestaurantRealtimeSession:
                         elif inner_type == 'response.audio.delta':
                             delta = raw_data.get('delta', '')
                             if delta:
+                                # If this is the first audio after a handoff, we've finished the pause
+                                if self.handoff_pending:
+                                    print("[RestaurantAgent] New agent starting to speak after handoff")
+                                    self.handoff_pending = False
+                                
                                 # Delta is base64-encoded PCM16 audio, decode to bytes
                                 try:
                                     audio_bytes = base64.b64decode(delta)
@@ -161,6 +208,33 @@ class RestaurantRealtimeSession:
                             # Tool was called
                             tool_name = raw_data.get('name', 'unknown')
                             print(f"[RestaurantAgent] Calling tool: {tool_name}")
+                            
+                            # Check if this is a handoff tool
+                            # Handoff tools may have various name formats:
+                            # - transfer_to_[agent_name]
+                            # - [agent_name] (direct agent name)
+                            # - handoff_to_[agent_name]
+                            tool_name_lower = tool_name.lower()
+                            is_handoff = (
+                                'transfer' in tool_name_lower or 
+                                'handoff' in tool_name_lower or
+                                'specialist' in tool_name_lower or
+                                'sakura' in tool_name_lower  # Our agent names contain "Sakura"
+                            )
+                            
+                            if is_handoff:
+                                print(f"[RestaurantAgent] HANDOFF DETECTED to: {tool_name}")
+                                self.handoff_pending = True
+                                
+                                # Send silence buffer immediately after handoff
+                                silence_buffer = self.generate_silence_buffer()
+                                print(f"[RestaurantAgent] Inserting {HANDOFF_DELAY_SECONDS}s silence ({len(silence_buffer)} bytes)")
+                                yield {
+                                    "type": "audio_chunk",
+                                    "data": silence_buffer
+                                }
+                            else:
+                                print(f"[RestaurantAgent] Regular tool call (not handoff): {tool_name}")
                             
                 elif event_type == "audio":
                     if hasattr(event, 'data') and event.data:

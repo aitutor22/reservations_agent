@@ -9,10 +9,12 @@
 - Integration: Future POS system for reservation management
 
 ## Key Components
-- Main greeting agent routes to specialized agents
+- Main greeting agent routes to specialized agents with natural handoff phrases
 - General info agent handles hours, location, daily specials, ramen varieties  
 - Reservation agent manages bookings with tool calling
 - WebSocket maintains persistent audio connection
+- Smooth transitions with 2s delay via silence buffer injection (48k zero samples at 24kHz)
+- Handoff detection via tool call monitoring in session_manager.py
 
 ## API Endpoints
 - POST /api/reservations - Create new reservation

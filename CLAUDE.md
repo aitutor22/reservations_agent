@@ -218,6 +218,7 @@ interface AppState {
 3. **Frame Size**: Always validate chunk size before sending (<700KB base64)
 4. **Context Managers**: Always use async context managers for session lifecycle
 5. **Buffer Flushing**: Implement periodic flushing to prevent audio accumulation
+6. **Handoff Delays**: OpenAI Realtime API doesn't support pause insertion; inject silence buffers (2s of zeros at 24kHz) after detecting handoff tool calls for natural transfer delays
 
 ### Security Requirements
 - HTTPS for production deployment
