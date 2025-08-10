@@ -84,9 +84,9 @@
  * TECHNICAL DETAILS:
  * - Sample Rate: 24,000 Hz (24kHz) - OpenAI's requirement for optimal speech
  * - Channels: 1 (mono) - Speech doesn't need stereo
- * - Buffer Size: 4096 samples (~170ms at 24kHz)
- * - Chunk Frequency: Every 2-5 buffers (~340-850ms)
- * - Frame Size Limit: 700KB base64 (~525KB binary) to stay under 1MB WebSocket limit
+ * - Buffer Size: 1024 samples (~43ms at 24kHz) - Closest power of 2 to OpenAI's 40ms
+ * - Chunk Frequency: Every ~43ms for real-time streaming
+ * - No buffering: Send immediately for lowest latency and best VAD response
  */
 
 import { mapState, mapActions } from 'vuex'
@@ -99,10 +99,8 @@ export default {
       mediaRecorder: null,      // Not used - kept for reference
       audioContext: null,        // Web Audio API context for processing
       audioProcessor: null,      // ScriptProcessor node for real-time conversion
-      pcmBuffer: [],            // Buffer of PCM16 chunks waiting to be sent
       showTranscript: true,
-      mediaStream: null,        // Reference to microphone stream for cleanup
-      flushInterval: null       // Timer for periodic buffer flushing
+      mediaStream: null         // Reference to microphone stream for cleanup
     }
   },
   computed: {
@@ -181,13 +179,11 @@ export default {
         
         // Step 4: Create ScriptProcessor for real-time audio processing
         // ScriptProcessor (deprecated but still widely used) gives us access to raw audio samples
-        // Parameters: bufferSize (4096), inputChannels (1), outputChannels (1)
-        // 4096 samples at 24kHz = ~170ms of audio per buffer
-        this.audioProcessor = this.audioContext.createScriptProcessor(4096, 1, 1)
+        // Parameters: bufferSize (1024), inputChannels (1), outputChannels (1)
+        // 1024 samples at 24kHz = ~43ms of audio per buffer (closest power of 2 to OpenAI's 40ms)
+        this.audioProcessor = this.audioContext.createScriptProcessor(1024, 1, 1)
         
-        this.pcmBuffer = []
-        
-        // Step 5: Process audio in real-time - this is called ~6 times per second
+        // Step 5: Process audio in real-time - this is called ~23 times per second (every 43ms)
         this.audioProcessor.onaudioprocess = (event) => {
           // Get Float32 audio data from the input buffer
           // Float32 values range from -1.0 to 1.0
@@ -207,36 +203,24 @@ export default {
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
           }
           
-          // Step 6: Buffer the PCM16 data
-          // We don't send immediately to avoid too many small network requests
-          this.pcmBuffer.push(pcm16)
+          // Step 6: Send immediately - OpenAI best practice for 40ms chunks
+          // Convert PCM16 binary data to base64 string for WebSocket transport
+          const base64Audio = this.arrayBufferToBase64(pcm16.buffer)
           
-          // Step 7: Send chunks when we have enough data
-          // 2 buffers = ~340ms of audio - a good balance between latency and efficiency
-          if (this.pcmBuffer.length >= 2) {
-            this.sendPCM16Chunk()
-          }
+          // Send base64-encoded PCM16 audio via WebSocket
+          this.$store.dispatch('sendAudioChunk', base64Audio)
         }
         
-        // Step 8: Connect the audio processing pipeline
+        // Step 7: Connect the audio processing pipeline
         // source (mic) → audioProcessor (conversion) → destination (speakers for monitoring)
         source.connect(this.audioProcessor)
         this.audioProcessor.connect(this.audioContext.destination)
         
         this.isRecording = true
-        console.log('Recording started with PCM16 conversion')
+        console.log('Recording started with PCM16 conversion (43ms chunks)')
         
         // Store stream reference for cleanup
         this.mediaStream = stream
-        
-        // Step 9: Set up periodic buffer flushing
-        // This ensures audio is sent even during silence or if buffer doesn't fill
-        // Without this, the last bit of speech might get stuck in the buffer
-        this.flushInterval = setInterval(() => {
-          if (this.pcmBuffer.length > 0 && this.isRecording) {
-            this.sendPCM16Chunk()
-          }
-        }, 300) // Flush every 300ms
         
       } catch (error) {
         console.error('Failed to start recording:', error)
@@ -249,17 +233,6 @@ export default {
     
     async stopRecording() {
       this.isRecording = false
-      
-      // Clear flush interval
-      if (this.flushInterval) {
-        clearInterval(this.flushInterval)
-        this.flushInterval = null
-      }
-      
-      // Send any remaining buffered audio
-      if (this.pcmBuffer.length > 0) {
-        this.sendPCM16Chunk()
-      }
       
       // Clean up audio processing
       if (this.audioProcessor) {
@@ -282,52 +255,6 @@ export default {
       
       // Send end of audio signal
       this.sendEndOfAudio()
-    },
-    
-    /**
-     * Send accumulated PCM16 audio chunks to the backend
-     * This manages chunk size to prevent WebSocket frame size errors (1MB limit)
-     */
-    sendPCM16Chunk() {
-      if (this.pcmBuffer.length === 0) return
-      
-      // WebSocket frames have a 1MB limit, and base64 encoding increases size by ~33%
-      // We limit chunks to prevent "frame exceeds limit" errors
-      // Take at most 5 buffers (~850ms of audio) at a time
-      const chunksToSend = this.pcmBuffer.splice(0, Math.min(5, this.pcmBuffer.length))
-      
-      // Combine the PCM16 chunks into a single array
-      // Each chunk is 4096 samples * 2 bytes = 8192 bytes
-      const totalLength = chunksToSend.reduce((sum, chunk) => sum + chunk.length, 0)
-      const combinedPCM16 = new Int16Array(totalLength)
-      let offset = 0
-      
-      for (const chunk of chunksToSend) {
-        combinedPCM16.set(chunk, offset)
-        offset += chunk.length
-      }
-      
-      // Convert PCM16 binary data to base64 string for WebSocket transport
-      // We use base64 because WebSocket text frames are easier to handle than binary
-      const base64Audio = this.arrayBufferToBase64(combinedPCM16.buffer)
-      
-      // Safety check: ensure we don't exceed WebSocket frame limit
-      // 700KB base64 ≈ 525KB binary, well under the 1MB limit
-      if (base64Audio.length > 700000) {
-        console.warn('Audio chunk too large, splitting...')
-        // If chunk is too large (shouldn't happen with our limits), split it
-        const halfLength = Math.floor(combinedPCM16.length / 2)
-        const firstHalf = combinedPCM16.slice(0, halfLength)
-        const secondHalf = combinedPCM16.slice(halfLength)
-        
-        this.$store.dispatch('sendAudioChunk', this.arrayBufferToBase64(firstHalf.buffer))
-        setTimeout(() => {
-          this.$store.dispatch('sendAudioChunk', this.arrayBufferToBase64(secondHalf.buffer))
-        }, 50)
-      } else {
-        // Send base64-encoded PCM16 audio via WebSocket
-        this.$store.dispatch('sendAudioChunk', base64Audio)
-      }
     },
     
     /**
