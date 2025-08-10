@@ -1,9 +1,9 @@
 # Unified Agents TODO
 
 ## Problem Statement
-Currently, text mode (WebSocket/Assistants API) and voice mode (WebRTC/Realtime API) use different agent systems:
+Currently, text mode and voice mode both use WebSocket but with different processing paths:
 - **Text Mode**: Uses Assistants API with vector stores and custom agents
-- **Voice Mode**: Uses Realtime API with basic instructions
+- **Voice Mode**: Uses WebSocket → Backend RealtimeAgent → OpenAI Realtime API
 - **Issue**: Can't test voice agent behavior cheaply via text
 - **Cost**: Realtime API costs $0.06/min even for text testing (30-60x more expensive)
 
@@ -142,23 +142,24 @@ class OpenAIService:
         return result["response"], result["state"]
 ```
 
-#### Update: `backend/main.py` (Realtime endpoint)
+#### Update: `backend/realtime_agents/session_manager.py`
 ```python
 from services.agent_orchestrator import AgentOrchestrator
 
-@app.post("/api/realtime/session")
-async def create_realtime_session():
-    orchestrator = AgentOrchestrator()
+class RestaurantRealtimeSession:
+    def __init__(self):
+        self.orchestrator = AgentOrchestrator()
     
-    # Use same instructions as text mode
-    instructions = orchestrator.get_instructions_for_mode("realtime")
-    
-    # Create session with unified config
-    json={
-        "model": "gpt-4o-realtime-preview-2024-12-17",
-        "instructions": instructions,
-        # ...
-    }
+    async def initialize(self):
+        # Use same instructions as text mode
+        instructions = self.orchestrator.get_instructions_for_mode("realtime")
+        
+        # Configure RealtimeAgent with unified config
+        self.agent = RealtimeAgent(
+            name="SakuraRamenAssistant",
+            instructions=instructions,
+            tools=[...]
+        )
 ```
 
 #### Update: `backend/websocket_handler.py`

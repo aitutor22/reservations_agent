@@ -59,12 +59,6 @@ class Config:
     RESTAURANT_ADDRESS: str = "78 Boat Quay, Singapore 049866"
     
     # Agent Configuration
-    GREETING_AGENT_INSTRUCTIONS: str = (
-        "You are a friendly voice assistant for Sakura Ramen House. "
-        "Greet customers warmly and help route them to the right service. "
-        "You can help with general information or reservation requests."
-    )
-    
     KNOWLEDGE_AGENT_INSTRUCTIONS: str = (
         "You answer questions about Sakura Ramen House with accurate, concise responses. "
         "Use the restaurant knowledge base to provide information about menu, hours, location, "

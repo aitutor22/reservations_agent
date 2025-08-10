@@ -1,5 +1,49 @@
 # Backend TODO List - PostgreSQL Reservation System
 
+## WEEKEND DEMO SIMPLIFICATION (Priority)
+
+### Goal
+Simplify the reservation system for a weekend tech demo. Assume tables are always available and focus on core reservation creation/lookup functionality.
+
+### Simplification Tasks
+
+#### 1. Simplify API Endpoints in main.py
+- [ ] Remove restaurant info endpoints (lines 272-295)
+  - `/api/restaurant/info` - Not needed, info is hardcoded in agent tools
+  - `/api/restaurant/query` - Not needed for demo
+- [ ] Keep only essential reservation endpoints:
+  - [x] Keep: `POST /api/reservations` - Create reservation
+  - [x] Keep: `GET /api/reservations/{phone_number}` - Lookup reservation
+  - [ ] Remove: `PUT /api/reservations/{phone_number}` - Update reservation
+  - [ ] Remove: `DELETE /api/reservations/{phone_number}` - Cancel reservation
+  - [ ] Remove: `GET /api/reservations` - List all reservations
+  - [ ] Remove: `POST /api/reservations/check-availability` - Check availability
+
+#### 2. Update Realtime Tools to Use Actual API
+- [ ] Modify `backend/realtime_tools/reservation.py`:
+  - [ ] Add httpx imports and async client setup
+  - [ ] Keep `check_availability()` as mock (always return available)
+  - [ ] Update `make_reservation()` to call actual API endpoint
+  - [ ] Add proper error handling for API calls
+  - [ ] Return user-friendly messages
+
+#### 3. Phone Number Handling
+- [x] Keep phone number field in ReservationBase model (per user request)
+- [x] Keep phone number validation in Pydantic model
+- [ ] Consider relaxing validation for demo (optional)
+
+#### 4. Testing Checklist
+- [ ] Voice agent can check availability (mocked to always available)
+- [ ] Voice agent can create reservation via API
+- [ ] Reservation is persisted in database
+- [ ] Confirmation number is returned to user
+- [ ] Can lookup reservation by phone number
+- [ ] Error handling works properly
+
+---
+
+## Original Full Implementation TODO
+
 ## 1. Database Setup
 - [x] Add PostgreSQL dependencies to requirements.txt (sqlalchemy, asyncpg, alembic, psycopg2-binary)
 - [x] Create database.py for connection configuration
