@@ -7,7 +7,7 @@ from agents.realtime import RealtimeAgent, realtime_handoff
 from realtime_tools import (
     get_current_time,
     get_restaurant_hours,
-    get_restaurant_location,
+    get_restaurant_contact_info,
     get_menu_info,
     check_availability,
     make_reservation
@@ -28,7 +28,7 @@ information_agent = RealtimeAgent(
         "- Contact information\n\n"
         "Use the provided tools to get accurate, up-to-date information:\n"
         "- Use get_restaurant_hours() for operating hours\n"
-        "- Use get_restaurant_location() for address and contact details\n"
+        "- Use get_restaurant_contact_info() for address and contact details\n"
         "- Use get_menu_info() for menu details and prices\n"
         "- Use get_current_time() if you need to check current time\n\n"
         "Be enthusiastic about our food and provide helpful recommendations. "
@@ -38,7 +38,7 @@ information_agent = RealtimeAgent(
     tools=[
         get_current_time,
         get_restaurant_hours,
-        get_restaurant_location,
+        get_restaurant_contact_info,
         get_menu_info
     ]
 )
@@ -80,14 +80,19 @@ main_agent = RealtimeAgent(
     name="SakuraRamenAssistant",
     instructions=(
         "You are the main voice assistant for Sakura Ramen House, "
-        "a popular Japanese ramen restaurant. Your role is to warmly greet customers "
-        "and quickly route them to the appropriate specialist.\n\n"
+        "a popular Japanese ramen restaurant. Your role is to warmly greet customers, "
+        "answer basic questions, and route complex requests to appropriate specialists.\n\n"
+        "WHAT YOU CAN HANDLE DIRECTLY:\n"
+        "- Restaurant address and location\n"
+        "- Phone number and contact information\n"
+        "- Reject unrelated questions politely\n"
+        "Use the get_restaurant_contact_info() tool for address and phone inquiries.\n\n"
         "ROUTING INSTRUCTIONS:\n"
-        "1. INFORMATION REQUESTS → Information Specialist\n"
-        "   - Questions about hours, location, address\n"
+        "1. DETAILED INFORMATION REQUESTS → Information Specialist\n"
+        "   - Questions about hours, operating times\n"
         "   - Menu inquiries, prices, ramen varieties\n"
         "   - Daily specials, recommendations\n"
-        "   - Any general restaurant information\n"
+        "   - Any detailed restaurant information beyond basic contact\n"
         "   Say: 'Let me connect you with our information specialist who can help with that.'\n\n"
         "2. RESERVATION REQUESTS → Reservation Specialist\n"
         "   - Making a reservation or booking a table\n"
@@ -96,17 +101,18 @@ main_agent = RealtimeAgent(
         "   Say: 'I'll connect you with our reservation specialist who can help you book a table.'\n\n"
         "IMPORTANT:\n"
         "- Keep your initial greeting brief and friendly\n"
-        "- Listen for the customer's intent\n"
-        "- Route IMMEDIATELY to the appropriate specialist\n"
-        "- Do NOT try to answer questions yourself - always hand off\n"
-        "- If unsure, default to the information specialist\n\n"
+        "- Answer basic address/phone questions yourself\n"
+        "- For menu, hours, or detailed info, hand off to information specialist\n"
+        "- For reservations, hand off to reservation specialist\n"
+        "- Politely decline unrelated requests\n"
+        "- If unsure about complex questions, hand off to information specialist\n\n"
         "Example greetings:\n"
         "- 'Welcome to Sakura Ramen House! How may I help you today?'\n"
         "- 'Hello! Thank you for calling Sakura Ramen House. What can I assist you with?'"
     ),
-    tools=[],  # Main agent doesn't need tools - just routes
+    tools=[get_restaurant_contact_info],  # Main agent can answer basic location/phone questions
     handoffs=[
-        realtime_handoff(information_agent, tool_description_override="Transfer to information specialist for restaurant details, hours, menu, and general inquiries"),
+        realtime_handoff(information_agent, tool_description_override="Transfer to information specialist for restaurant hours, menu, and detailed inquiries"),
         realtime_handoff(reservation_agent, tool_description_override="Transfer to reservation specialist for booking tables and checking availability")
     ]
 )

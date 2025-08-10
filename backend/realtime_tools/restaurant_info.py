@@ -27,8 +27,8 @@ def get_restaurant_hours() -> str:
 
 
 @function_tool
-def get_restaurant_location() -> str:
-    """Get the restaurant's exact address and contact information. Always call this when asked about location, address, directions, or how to reach us."""
+def get_restaurant_contact_info() -> str:
+    """Get the restaurant's address and contact information. Always call this when asked about location, address, phone number, or how to reach us."""
     return f"""
     Sakura Ramen House
     Address: {config.RESTAURANT_ADDRESS}
