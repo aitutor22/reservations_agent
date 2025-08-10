@@ -1,22 +1,26 @@
 """
 API Client for Realtime Tools
-Singleton httpx client for making async API calls without blocking the event loop
+Thread-local httpx clients to avoid cross-event-loop issues
 """
 import httpx
+import threading
 from typing import Optional
 
-# Singleton client instance
-_client: Optional[httpx.AsyncClient] = None
+# Thread-local storage for clients
+# Each thread (including ThreadPoolExecutor threads) gets its own client
+_thread_local = threading.local()
 
 
 async def get_api_client() -> httpx.AsyncClient:
     """
-    Get or create the singleton API client.
-    Uses connection pooling for efficiency.
+    Get or create a thread-local API client.
+    
+    This ensures each thread has its own AsyncClient instance,
+    avoiding cross-event-loop issues when using ThreadPoolExecutor.
+    Connection pooling still works within each thread.
     """
-    global _client
-    if _client is None:
-        _client = httpx.AsyncClient(
+    if not hasattr(_thread_local, 'client') or _thread_local.client is None:
+        _thread_local.client = httpx.AsyncClient(
             base_url="http://localhost:8000",
             timeout=30.0,
             limits=httpx.Limits(
@@ -24,18 +28,17 @@ async def get_api_client() -> httpx.AsyncClient:
                 max_connections=10
             )
         )
-    return _client
+    return _thread_local.client
 
 
 async def cleanup_api_client():
     """
-    Cleanup the API client on shutdown.
-    Should be called when the application terminates.
+    Cleanup the thread-local API client.
+    Should be called when a thread is done with its client.
     """
-    global _client
-    if _client:
-        await _client.aclose()
-        _client = None
+    if hasattr(_thread_local, 'client') and _thread_local.client:
+        await _thread_local.client.aclose()
+        _thread_local.client = None
 
 
 def format_phone_number(phone: str) -> str:

@@ -76,6 +76,11 @@ class Config:
         "DATABASE_URL",
         "postgresql+asyncpg://postgres:postgres@localhost:5432/reservations"
     )
+    # Sync database URL for direct database access in function tools
+    SYNC_DATABASE_URL: str = os.getenv(
+        "SYNC_DATABASE_URL",
+        "postgresql://postgres:postgres@localhost:5432/reservations"
+    )
     DATABASE_POOL_SIZE: int = int(os.getenv("DATABASE_POOL_SIZE", "20"))
     DATABASE_MAX_OVERFLOW: int = int(os.getenv("DATABASE_MAX_OVERFLOW", "10"))
     DATABASE_POOL_RECYCLE: int = int(os.getenv("DATABASE_POOL_RECYCLE", "3600"))
