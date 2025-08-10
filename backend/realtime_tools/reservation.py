@@ -35,6 +35,7 @@ Original async/HTTP pattern preserved below for reference and future migration.
 from typing import Optional
 from agents import function_tool
 from .api_client import format_phone_number  # Still need format_phone_number utility
+from utils.name_matching import split_and_match_names  # For secure name verification
 
 # Import database directly for synchronous access
 from sqlalchemy import create_engine, select
@@ -84,15 +85,16 @@ from config import config
 
 
 @function_tool
-def lookup_reservation(phone: str) -> str:
+def lookup_reservation(phone: str, name: str) -> str:
     """
-    Look up an existing reservation by phone number.
+    Look up an existing reservation by phone number and verify ownership with name.
     
     Args:
         phone: Contact phone number (will be auto-formatted for Singapore if 8 digits)
+        name: Name on the reservation (for security verification)
     
     Returns:
-        Reservation details if found, or a not found message
+        Reservation details if found and verified, or a not found message
     """
     # Format phone number for Singapore
     formatted_phone = format_phone_number(phone)
@@ -108,25 +110,31 @@ def lookup_reservation(phone: str) -> str:
             reservation = session.execute(stmt).scalar_one_or_none()
             
             if reservation:
-                
-                # Format the response
-                response_text = f"""✅ Reservation found!
+                # Verify the name matches using fuzzy matching (up to 2 character difference)
+                # This handles voice transcription errors and partial names
+                if split_and_match_names(name, reservation.name, max_distance=2):
+                    # Name verified - return reservation details
+                    response_text = f"""✅ Reservation found!
 
 Name: {reservation.name}
 Phone: {reservation.phone_number}
 Date: {reservation.reservation_date}
 Time: {reservation.reservation_time}
 Party Size: {reservation.party_size}"""
-                
-                # Add special requests if present
-                if reservation.other_info and isinstance(reservation.other_info, dict):
-                    special_requests = reservation.other_info.get('special_requests')
-                    if special_requests:
-                        response_text += f"\nSpecial Requests: {special_requests}"
-                
-                return response_text
+                    
+                    # Add special requests if present
+                    if reservation.other_info and isinstance(reservation.other_info, dict):
+                        special_requests = reservation.other_info.get('special_requests')
+                        if special_requests:
+                            response_text += f"\nSpecial Requests: {special_requests}"
+                    
+                    return response_text
+                else:
+                    # Name doesn't match - return generic message for security
+                    return "I couldn't find a reservation with those details. Please check your name and phone number."
             else:
-                return f"No reservation found for phone number {formatted_phone}. Would you like to make a new reservation?"
+                # No reservation found with that phone number
+                return "I couldn't find a reservation with those details. Would you like to make a new reservation?"
                 
     except Exception as e:
         print(f"[ERROR] Database error in lookup_reservation: {e}")

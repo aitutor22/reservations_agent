@@ -3,7 +3,6 @@
     <!-- Header -->
     <div class="header">
       <h1 class="title">Sakura Ramen House</h1>
-      <p class="subtitle">Voice Assistant</p>
       <div class="status-indicator" :class="connectionStatus">
         <span class="status-dot"></span>
         <span class="status-text">{{ statusText }}</span>
@@ -465,7 +464,7 @@ export default {
   background: rgba(255, 255, 255, 0.95);
   border-radius: 1rem;
   padding: 1rem;
-  max-height: 200px;
+  max-height: 120px;
   overflow-y: auto;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
@@ -576,7 +575,7 @@ export default {
     left: 1rem;
     right: 1rem;
     bottom: 1rem;
-    max-height: 150px;
+    max-height: 100px;
     padding: 0.75rem;
   }
   
