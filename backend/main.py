@@ -13,7 +13,6 @@ from knowledge.vector_store_manager import setup_knowledge_base
 from database import init_db, close_db
 
 # Import routers
-from api.routes import reservations
 from api.websockets import realtime_agent
 
 
@@ -27,17 +26,22 @@ async def lifespan(app: FastAPI):
     try:
         await init_db()
         
-        # List existing reservations for testing
+        # List existing reservations for testing (using direct database access)
         print("\n" + "="*60)
         print("Existing Reservations in Database:")
         print("="*60)
         try:
-            from database import get_db
-            from services.reservation_service import get_reservation_service
+            from sqlalchemy import create_engine, select
+            from sqlalchemy.orm import Session
+            from models.db_models import Reservation
+            from config import config
             
-            async for db in get_db():
-                service = await get_reservation_service(db)
-                reservations = await service.list_all_reservations(limit=100)
+            # Create a sync database connection
+            engine = create_engine(config.SYNC_DATABASE_URL)
+            
+            with Session(engine) as session:
+                stmt = select(Reservation).limit(100)
+                reservations = session.execute(stmt).scalars().all()
                 
                 if reservations:
                     for i, res in enumerate(reservations, 1):
@@ -49,7 +53,6 @@ async def lifespan(app: FastAPI):
                         print("-" * 40)
                 else:
                     print("No reservations found in database.")
-                break
         except Exception as e:
             print(f"Could not list reservations: {e}")
         print("="*60 + "\n")
@@ -95,5 +98,4 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(reservations.router)
 app.include_router(realtime_agent.router)

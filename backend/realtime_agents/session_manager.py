@@ -218,8 +218,7 @@ class RestaurantRealtimeSession:
                             is_handoff = (
                                 'transfer' in tool_name_lower or 
                                 'handoff' in tool_name_lower or
-                                'specialist' in tool_name_lower or
-                                'sakura' in tool_name_lower  # Our agent names contain "Sakura"
+                                'specialist' in tool_name_lower
                             )
                             
                             if is_handoff:
