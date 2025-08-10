@@ -163,7 +163,7 @@ async def create_realtime_session():
                 json={
                     "model": "gpt-4o-realtime-preview-2024-12-17",
                     "voice": "verse",  # Options: alloy, echo, fable, onyx, nova, verse
-                    "instructions": config.GREETING_AGENT_INSTRUCTIONS,
+                    "instructions": "You are a friendly voice assistant for Sakura Ramen House. Help customers with information and reservations.",
                     "turn_detection": {
                         "type": "server_vad",  # Server voice activity detection
                         "threshold": 0.5,
