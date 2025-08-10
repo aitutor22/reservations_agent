@@ -2,12 +2,7 @@
 FastAPI Main Application
 Restaurant Voice Reservation Agent Backend
 """
-
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional, List
+import base64
 import asyncio
 import json
 import uuid
@@ -15,17 +10,19 @@ from datetime import datetime
 import httpx
 import os
 
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+from typing import Dict, Any, Optional, List
+
 from config import config
-from services.openai_service import get_openai_service
 from knowledge.vector_store_manager import setup_knowledge_base
 from database import get_db, init_db, close_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from models.reservation import ReservationCreate, ReservationUpdate, ReservationResponse
 from services.reservation_service import get_reservation_service
 
-
-# Session management
-active_sessions: Dict[str, Dict[str, Any]] = {}
 
 
 @asynccontextmanager
@@ -95,10 +92,6 @@ async def lifespan(app: FastAPI):
             print(f"Warning: Could not initialize knowledge base: {kb_error}")
             print("Continuing without vector store support...")
         
-        # Initialize OpenAI service
-        service = get_openai_service()
-        print("OpenAI service initialized")
-        
     except Exception as e:
         print(f"Error during startup: {e}")
         # Continue anyway to allow fixing configuration
@@ -107,8 +100,6 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     print("Shutting down...")
-    service = get_openai_service()
-    service.cleanup()
     
     # Close database connections
     await close_db()
@@ -268,7 +259,7 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
                             # Handle text input from frontend
                             text = message.get("text")
                             if text and hasattr(session_manager.session, 'send_text'):
-                                print(f"[RestaurantAgent WS] Sending text: {text}")
+                                # print(f"[RestaurantAgent WS] Sending text: {text}")
                                 await session_manager.send_text(text)
                             elif text:
                                 print(f"[RestaurantAgent WS] Text message not supported yet: {text}")
@@ -292,7 +283,6 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
                     elif "bytes" in data:
                         # Handle binary audio data directly
                         # Convert bytes to base64 for RealtimeAgent
-                        import base64
                         audio_base64 = base64.b64encode(data["bytes"]).decode('utf-8')
                         await session_manager.send_audio(audio_base64)
                         
@@ -337,72 +327,6 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
             pass
 
 
-# Session management endpoints
-@app.post("/api/session/create")
-async def create_session():
-    """Create a new session"""
-    session_id = str(uuid.uuid4())
-    
-    active_sessions[session_id] = {
-        "id": session_id,
-        "created_at": datetime.utcnow().isoformat(),
-        "state": "greeting",
-        "context": {}
-    }
-    
-    # Reset the service for new session
-    service = get_openai_service()
-    service.reset_session()
-    
-    return {
-        "session_id": session_id,
-        "status": "created",
-        "message": "Session created successfully"
-    }
-
-
-@app.delete("/api/session/{session_id}")
-async def end_session(session_id: str):
-    """End a session"""
-    if session_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    del active_sessions[session_id]
-    
-    return {
-        "session_id": session_id,
-        "status": "ended",
-        "message": "Session ended successfully"
-    }
-
-
-# Message processing endpoint (for testing without WebSocket)
-@app.post("/api/message")
-async def process_message(data: dict):
-    """Process a text message (for testing)"""
-    session_id = data.get("session_id")
-    message = data.get("message")
-    
-    if not session_id or session_id not in active_sessions:
-        raise HTTPException(status_code=400, detail="Invalid session ID")
-    
-    if not message:
-        raise HTTPException(status_code=400, detail="Message is required")
-    
-    # Process message with OpenAI service
-    service = get_openai_service()
-    response, state = await service.process_message(message)
-    
-    # Update session state
-    active_sessions[session_id]["state"] = state
-    
-    return {
-        "response": response,
-        "state": state,
-        "session_id": session_id
-    }
-
-
 
 # Restaurant information endpoints (REST fallback)
 @app.get("/api/restaurant/info")
@@ -428,25 +352,8 @@ async def query_restaurant_info(data: dict):
     if not query:
         raise HTTPException(status_code=400, detail="Query is required")
     
-    service = get_openai_service()
-    
-    # Process query with information agent directly
-    if service.information_agent:
-        result = service.information_agent.process_query(query)
-        
-        if result["success"]:
-            return {
-                "response": result["response"],
-                "success": True
-            }
-        else:
-            return {
-                "response": "Unable to process query",
-                "success": False,
-                "error": result.get("error")
-            }
-    else:
-        raise HTTPException(status_code=503, detail="Information service unavailable")
+    # TODO: Implement with information agent or remove if not needed
+    raise HTTPException(status_code=503, detail="Information service not yet implemented")
 
 
 # Reservation endpoints
@@ -544,37 +451,23 @@ async def check_availability(
 
 
 # Admin endpoints for testing
-@app.get("/api/admin/sessions")
-async def list_sessions():
-    """List all active sessions (admin endpoint)"""
-    return {
-        "count": len(active_sessions),
-        "sessions": list(active_sessions.values())
-    }
-
-
 @app.post("/api/admin/reset")
 async def reset_service():
-    """Reset the OpenAI service (admin endpoint)"""
-    service = get_openai_service()
-    service.reset_session()
-    
-    # Clear all sessions
-    active_sessions.clear()
-    
+    """Reset the service (admin endpoint)"""
+    # Currently just a placeholder - can be used for resetting any services if needed
     return {
         "status": "reset",
         "message": "Service reset successfully"
     }
 
 
-if __name__ == "__main__":
-    import uvicorn
+# if __name__ == "__main__":
+#     import uvicorn
     
-    print(f"Starting server on {config.HOST}:{config.PORT}")
-    uvicorn.run(
-        "main:app",
-        host=config.HOST,
-        port=config.PORT,
-        reload=config.DEBUG
-    )
+#     print(f"Starting server on {config.HOST}:{config.PORT}")
+#     uvicorn.run(
+#         "main:app",
+#         host=config.HOST,
+#         port=config.PORT,
+#         reload=config.DEBUG
+#     )
