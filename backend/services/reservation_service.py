@@ -12,6 +12,7 @@ import logging
 
 from models.db_models import Reservation
 from models.reservation import ReservationCreate, ReservationUpdate, ReservationResponse
+from utils.name_matching import split_and_match_names
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,42 @@ class ReservationService:
             logger.error(f"Error creating reservation: {e}")
             raise
     
+    async def verify_reservation_owner(
+        self, 
+        phone_number: str, 
+        name: str
+    ) -> Optional[ReservationResponse]:
+        """
+        Verify reservation ownership by checking both phone and name.
+        
+        Args:
+            phone_number: Customer phone number
+            name: Customer name (will use fuzzy matching)
+            
+        Returns:
+            Reservation if both phone and name match, None otherwise
+        """
+        try:
+            # First get the reservation by phone
+            stmt = select(Reservation).where(Reservation.phone_number == phone_number)
+            result = await self.db.execute(stmt)
+            reservation = result.scalar_one_or_none()
+            
+            if not reservation:
+                return None
+            
+            # Verify the name matches (with fuzzy matching)
+            if not split_and_match_names(name, reservation.name):
+                logger.warning(f"Name verification failed for {phone_number}: provided '{name}' vs stored '{reservation.name}'")
+                return None
+            
+            logger.info(f"Verified reservation ownership for {phone_number}")
+            return ReservationResponse.from_orm(reservation)
+            
+        except Exception as e:
+            logger.error(f"Error verifying reservation: {e}")
+            raise
+    
     async def get_reservation_by_phone(self, phone_number: str) -> Optional[ReservationResponse]:
         """
         Get reservation by phone number
@@ -99,25 +136,32 @@ class ReservationService:
     async def update_reservation(
         self,
         phone_number: str,
+        name: str,
         update_data: ReservationUpdate
     ) -> Optional[ReservationResponse]:
         """
-        Update an existing reservation
+        Update an existing reservation after verifying ownership
         
         Args:
             phone_number: Customer phone number
+            name: Customer name for verification
             update_data: Fields to update
             
         Returns:
-            Updated reservation if found, None otherwise
+            Updated reservation if verified and found, None otherwise
         """
         try:
-            # Check if reservation exists
+            # Check if reservation exists and verify ownership
             stmt = select(Reservation).where(Reservation.phone_number == phone_number)
             result = await self.db.execute(stmt)
             reservation = result.scalar_one_or_none()
             
             if not reservation:
+                return None
+                
+            # Verify name matches
+            if not split_and_match_names(name, reservation.name):
+                logger.warning(f"Update denied - name verification failed for {phone_number}")
                 return None
             
             # Update fields
@@ -146,17 +190,25 @@ class ReservationService:
             logger.error(f"Error updating reservation: {e}")
             raise
     
-    async def delete_reservation(self, phone_number: str) -> bool:
+    async def delete_reservation(self, phone_number: str, name: str) -> bool:
         """
-        Cancel/delete a reservation
+        Cancel/delete a reservation after verifying ownership
         
         Args:
             phone_number: Customer phone number
+            name: Customer name for verification
             
         Returns:
-            True if deleted, False if not found
+            True if deleted, False if not found or verification failed
         """
         try:
+            # First verify ownership
+            verified = await self.verify_reservation_owner(phone_number, name)
+            if not verified:
+                logger.warning(f"Delete denied - verification failed for {phone_number}")
+                return False
+            
+            # Now delete the reservation
             stmt = delete(Reservation).where(Reservation.phone_number == phone_number)
             result = await self.db.execute(stmt)
             await self.db.commit()

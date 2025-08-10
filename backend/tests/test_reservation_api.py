@@ -4,6 +4,11 @@ Test script for Reservation API
 Tests both direct API calls and the RealtimeAgent tools
 """
 
+import sys
+import os
+# Add parent directory to path to allow imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import asyncio
 import httpx
 from datetime import datetime, timedelta

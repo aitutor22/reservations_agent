@@ -4,6 +4,11 @@ Test script for Restaurant Agent with Handoff
 Tests the main greeting agent and its handoff to reservation specialist
 """
 
+import sys
+import os
+# Add parent directory to path to allow imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import asyncio
 from realtime_agents import RestaurantRealtimeSession
 

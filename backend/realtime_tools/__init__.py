@@ -12,7 +12,10 @@ from .restaurant_info import (
 
 from .reservation import (
     check_availability,
-    make_reservation
+    make_reservation,
+    lookup_reservation,
+    delete_reservation,
+    modify_reservation
 )
 
 __all__ = [
@@ -21,5 +24,8 @@ __all__ = [
     'get_restaurant_contact_info',
     'get_menu_info',
     'check_availability',
-    'make_reservation'
+    'make_reservation',
+    'lookup_reservation',
+    'delete_reservation',
+    'modify_reservation'
 ]

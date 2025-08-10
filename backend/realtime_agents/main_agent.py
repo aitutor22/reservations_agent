@@ -7,13 +7,12 @@ The agents share a consistent voice personality while having role-specific behav
 
 from agents.realtime import RealtimeAgent, realtime_handoff
 from .voice_personality import get_agent_instructions, VOICE_SELECTION_NOTES, MODEL_SETTINGS_NOTES
+from .reservation_agent import reservation_agent  # Import the consolidated reservation agent
 from realtime_tools import (
     get_current_time,
     get_restaurant_hours,
     get_restaurant_contact_info,
-    get_menu_info,
-    check_availability,
-    make_reservation
+    get_menu_info
 )
 
 # Create the information specialist agent with consistent personality
@@ -47,25 +46,6 @@ let them know you can help with that too.
         get_restaurant_hours,
         get_restaurant_contact_info,
         get_menu_info
-    ]
-)
-
-# Create the reservation specialist agent at module level
-reservation_agent = RealtimeAgent(
-    name="SakuraReservationSpecialist",
-    instructions=get_agent_instructions("reservation") + """
-    
-# TOOLS AVAILABLE
-- Use check_availability() to verify table availability for requested date/time
-- Use make_reservation() to create and confirm the booking
-
-# RESTAURANT DETAILS
-Location: 78 Boat Quay, Singapore 049866
-Phone: +65 6877 9888
-    """,
-    tools=[
-        check_availability,
-        make_reservation
     ]
 )
 

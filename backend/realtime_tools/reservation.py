@@ -27,6 +27,7 @@ and works correctly whether called from sync or async context.
 import asyncio
 import concurrent.futures
 import httpx
+from typing import Optional
 from agents import function_tool
 from .api_client import get_api_client, format_phone_number
 
@@ -56,6 +57,71 @@ def run_async_from_sync(coro):
         with concurrent.futures.ThreadPoolExecutor() as pool:
             future = pool.submit(asyncio.run, coro)
             return future.result()
+
+
+@function_tool
+def lookup_reservation(phone: str) -> str:
+    """
+    Look up an existing reservation by phone number.
+    
+    Args:
+        phone: Contact phone number (will be auto-formatted for Singapore if 8 digits)
+    
+    Returns:
+        Reservation details if found, or a not found message
+    """
+    return run_async_from_sync(_lookup_reservation_async(phone))
+
+
+async def _lookup_reservation_async(phone: str) -> str:
+    """
+    Async implementation to look up a reservation by phone number.
+    """
+    client = await get_api_client()
+    
+    # Format phone number for Singapore
+    formatted_phone = format_phone_number(phone)
+    
+    try:
+        response = await client.get(
+            f"/api/reservations/{formatted_phone}",
+            timeout=10.0
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Format the reservation details nicely
+            response_text = f"""✅ Reservation found!
+
+Name: {data.get('name')}
+Phone: {data.get('phone_number')}
+Date: {data.get('reservation_date')}
+Time: {data.get('reservation_time')}
+Party Size: {data.get('party_size')}"""
+            
+            other_info = data.get('other_info', {})
+            if other_info and other_info.get('special_requests'):
+                response_text += f"\nSpecial Requests: {other_info['special_requests']}"
+            
+            return response_text
+            
+        elif response.status_code == 404:
+            return f"No reservation found for phone number {formatted_phone}. Would you like to make a new reservation?"
+            
+        else:
+            return "I'm having trouble looking up your reservation. Please try again or provide more details."
+            
+    except httpx.TimeoutException:
+        return "The system is taking too long to respond. Please try again."
+        
+    except httpx.RequestError as e:
+        print(f"API connection error: {e}")
+        return "I'm having trouble connecting to our reservation system. Please try again in a moment."
+        
+    except Exception as e:
+        print(f"Unexpected error in lookup_reservation: {e}")
+        return "Something went wrong while looking up your reservation. Please try again."
 
 
 @function_tool
@@ -188,3 +254,170 @@ Party Size: {party_size}"""
     except Exception as e:
         print(f"Unexpected error in make_reservation: {e}")
         return "Something went wrong while making the reservation. Please try again or call us directly."
+
+
+@function_tool
+def delete_reservation(phone: str, name: str) -> str:
+    """
+    Cancel/delete a reservation after verifying ownership.
+    
+    Args:
+        phone: Contact phone number (will be auto-formatted for Singapore if 8 digits)
+        name: Name on the reservation (for verification)
+    
+    Returns:
+        Success or failure message
+    """
+    return run_async_from_sync(_delete_reservation_async(phone, name))
+
+
+async def _delete_reservation_async(phone: str, name: str) -> str:
+    """
+    Async implementation to delete a reservation with verification.
+    """
+    client = await get_api_client()
+    
+    # Format phone number for Singapore
+    formatted_phone = format_phone_number(phone)
+    
+    try:
+        response = await client.delete(
+            f"/api/reservations/{formatted_phone}",
+            json={"name": name},
+            timeout=10.0
+        )
+        
+        if response.status_code == 200:
+            return f"✅ Your reservation has been cancelled successfully. We hope to see you another time!"
+            
+        elif response.status_code == 404:
+            # Generic message to not reveal if reservation exists
+            return "I couldn't find a reservation with those details. Please check your name and phone number."
+            
+        else:
+            return "I'm having trouble cancelling your reservation. Please try again."
+            
+    except httpx.TimeoutException:
+        return "The system is taking too long to respond. Please try again."
+        
+    except httpx.RequestError as e:
+        print(f"API connection error: {e}")
+        return "I'm having trouble connecting to our reservation system. Please try again in a moment."
+        
+    except Exception as e:
+        print(f"Unexpected error in delete_reservation: {e}")
+        return "Something went wrong while cancelling your reservation. Please try again."
+
+
+@function_tool
+def modify_reservation(
+    phone: str, 
+    name: str,
+    new_date: Optional[str] = None,
+    new_time: Optional[str] = None,
+    new_party_size: Optional[int] = None,
+    new_special_requests: Optional[str] = None
+) -> str:
+    """
+    Modify an existing reservation after verifying ownership.
+    
+    Args:
+        phone: Contact phone number (will be auto-formatted for Singapore if 8 digits)
+        name: Name on the reservation (for verification)
+        new_date: New date in YYYY-MM-DD format (optional)
+        new_time: New time in HH:MM format (optional)
+        new_party_size: New number of guests (optional)
+        new_special_requests: New special requests or dietary restrictions (optional)
+    
+    Returns:
+        Updated reservation details or error message
+    """
+    return run_async_from_sync(_modify_reservation_async(
+        phone, name, new_date, new_time, new_party_size, new_special_requests
+    ))
+
+
+async def _modify_reservation_async(
+    phone: str,
+    name: str,
+    new_date: Optional[str],
+    new_time: Optional[str],
+    new_party_size: Optional[int],
+    new_special_requests: Optional[str]
+) -> str:
+    """
+    Async implementation to modify a reservation with verification.
+    """
+    client = await get_api_client()
+    
+    # Format phone number for Singapore
+    formatted_phone = format_phone_number(phone)
+    
+    # Build update request
+    update_data = {"name": name}
+    changes = []
+    
+    if new_date:
+        update_data["new_date"] = new_date
+        changes.append(f"Date: {new_date}")
+    if new_time:
+        update_data["new_time"] = new_time
+        changes.append(f"Time: {new_time}")
+    if new_party_size is not None:
+        update_data["new_party_size"] = new_party_size
+        changes.append(f"Party size: {new_party_size}")
+    if new_special_requests is not None:
+        update_data["new_special_requests"] = new_special_requests
+        changes.append(f"Special requests: {new_special_requests}")
+    
+    if not changes:
+        return "No changes were specified. Please tell me what you'd like to modify."
+    
+    try:
+        response = await client.put(
+            f"/api/reservations/{formatted_phone}",
+            json=update_data,
+            timeout=10.0
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            response_text = f"""✅ Reservation updated successfully!
+
+Updated Details:
+Name: {data.get('name')}
+Phone: {data.get('phone_number')}
+Date: {data.get('reservation_date')}
+Time: {data.get('reservation_time')}
+Party Size: {data.get('party_size')}"""
+            
+            other_info = data.get('other_info', {})
+            if other_info and other_info.get('special_requests'):
+                response_text += f"\nSpecial Requests: {other_info['special_requests']}"
+            
+            response_text += "\n\nWe look forward to seeing you!"
+            
+            return response_text
+            
+        elif response.status_code == 404:
+            # Generic message to not reveal if reservation exists
+            return "I couldn't find a reservation with those details. Please check your name and phone number."
+            
+        elif response.status_code == 400:
+            error_detail = response.json().get('detail', 'Invalid update data')
+            return f"I couldn't update your reservation: {error_detail}"
+            
+        else:
+            return "I'm having trouble updating your reservation. Please try again."
+            
+    except httpx.TimeoutException:
+        return "The system is taking too long to respond. Please try again."
+        
+    except httpx.RequestError as e:
+        print(f"API connection error: {e}")
+        return "I'm having trouble connecting to our reservation system. Please try again in a moment."
+        
+    except Exception as e:
+        print(f"Unexpected error in modify_reservation: {e}")
+        return "Something went wrong while updating your reservation. Please try again."
