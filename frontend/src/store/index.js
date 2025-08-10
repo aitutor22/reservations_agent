@@ -9,6 +9,7 @@ let audioContext = null
 let audioQueue = []
 let nextPlayTime = 0
 let isScheduling = false
+let activeAudioSources = [] // Track all scheduled audio sources for interruption handling
 
 // Function to play PCM16 audio data
 async function playPCM16Audio(blob) {
@@ -46,6 +47,30 @@ async function playPCM16Audio(blob) {
   }
 }
 
+// Stop all currently playing/scheduled audio
+function stopAllAudio() {
+  // Stop all active audio sources
+  activeAudioSources.forEach(({ source }) => {
+    try {
+      source.stop() // Stop immediately
+    } catch (e) {
+      // Source may have already ended, ignore error
+    }
+  })
+  
+  // Clear the tracking array
+  activeAudioSources = []
+  
+  // Clear the queue
+  audioQueue = []
+  
+  // Reset timing
+  nextPlayTime = 0
+  isScheduling = false
+  
+  console.log('Stopped all audio playback')
+}
+
 // Schedule audio chunks for gapless playback
 function scheduleAudioPlayback() {
   if (audioQueue.length === 0) {
@@ -73,6 +98,21 @@ function scheduleAudioPlayback() {
     
     // Schedule this chunk to play at the exact right time
     source.start(nextPlayTime)
+    
+    // Track this source so we can stop it if interrupted
+    activeAudioSources.push({
+      source: source,
+      startTime: nextPlayTime,
+      endTime: nextPlayTime + audioBuffer.duration
+    })
+    
+    // Clean up finished sources when they end
+    source.onended = () => {
+      const index = activeAudioSources.findIndex(s => s.source === source)
+      if (index > -1) {
+        activeAudioSources.splice(index, 1)
+      }
+    }
     
     // Update next play time to exactly after this chunk
     nextPlayTime += audioBuffer.duration
@@ -377,11 +417,9 @@ export default new Vuex.Store({
             } else if (data.type === 'session_started') {
               console.log('Session started:', data.session_id)
             } else if (data.type === 'audio_interrupted') {
-              console.log('Audio interrupted - stopping playback')
-              // Clear audio queue and reset timing when interrupted
-              audioQueue = []
-              nextPlayTime = 0
-              isScheduling = false
+              console.log('Audio interrupted - stopping all playback')
+              // Stop all currently playing audio immediately
+              stopAllAudio()
             } else if (data.type === 'audio_end') {
               console.log('Audio response completed')
             } else if (data.type === 'warning') {

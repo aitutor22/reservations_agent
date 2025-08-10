@@ -61,6 +61,9 @@ if (nextPlayTime < audioContext.currentTime) {
 }
 source.start(nextPlayTime) // Precise scheduling
 nextPlayTime += audioBuffer.duration // No gaps!
+
+// Track sources for interruption handling
+activeAudioSources.push({ source, startTime, endTime })
 ```
 
 **Benefits:**
@@ -68,6 +71,36 @@ nextPlayTime += audioBuffer.duration // No gaps!
 - Uses audio thread's high-precision scheduler (0.02ms accuracy)
 - Handles network jitter with 50ms initial buffer
 - Eliminates clicks/pops at chunk boundaries
+- Proper interruption handling stops all audio immediately
+
+### 3. Interruption Handling: Track and Stop All Audio
+
+**The Problem:**
+When users interrupted the agent, the original audio continued playing while new audio started, causing overlapping speech.
+
+**The Solution:**
+```javascript
+let activeAudioSources = [] // Track all scheduled sources
+
+// When scheduling audio
+activeAudioSources.push({ source, startTime, endTime })
+
+// On interruption
+function stopAllAudio() {
+  activeAudioSources.forEach(({ source }) => {
+    source.stop() // Stop immediately
+  })
+  activeAudioSources = []
+  audioQueue = []
+  nextPlayTime = 0
+}
+```
+
+**Benefits:**
+- Immediate audio termination on interruption
+- No overlapping audio streams
+- Clean state reset for new response
+- Proper VAD integration
 
 ## Technical Details
 
@@ -116,12 +149,14 @@ float32Array[i] = int16Array[i] / 32768.0
 - Timing jitter: 5-20ms between chunks
 - Audio artifacts: Clicks, pops, static
 - Latency: Inconsistent due to buffering
+- Interruption issues: Overlapping audio on VAD interrupts
 
 ### After Fix
 - Chunk size: Consistent 43ms
 - Timing precision: <0.02ms (audio thread)
 - Audio quality: Smooth, continuous
 - Latency: Predictable 50ms initial buffer
+- Interruption handling: Clean, immediate audio stop
 
 ## Best Practices Applied
 
@@ -169,4 +204,4 @@ float32Array[i] = int16Array[i] / 32768.0
 ---
 
 *Last Updated: 2025*
-*Fixed Issues: Audio static, timing glitches, chunk synchronization*
+*Fixed Issues: Audio static, timing glitches, chunk synchronization, overlapping audio on interruption*
