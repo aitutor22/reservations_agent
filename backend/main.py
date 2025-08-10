@@ -237,7 +237,7 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
     print(f"[RestaurantAgent WS] New connection: {session_id}")
     
     # Import the restaurant agent
-    from realtime_agent import RestaurantRealtimeSession
+    from realtime_agents.session_manager import RestaurantRealtimeSession
     
     session_manager = RestaurantRealtimeSession()
     

@@ -1,0 +1,252 @@
+"""
+Restaurant RealtimeSession Manager
+Manages the lifecycle and event processing for restaurant voice sessions
+"""
+
+import asyncio
+from typing import Optional, Dict, Any
+import base64
+
+from agents.realtime import RealtimeRunner
+from .restaurant_agent import create_restaurant_agent, RESTAURANT_AGENT_CONFIG
+
+
+class RestaurantRealtimeSession:
+    """Manages the restaurant realtime agent session"""
+    
+    def __init__(self):
+        self.agent = None
+        self.runner = None
+        self.session = None
+        self.session_context = None
+        self.is_running = False
+        
+    async def initialize(self):
+        """Initialize the restaurant realtime agent"""
+        print("[RestaurantAgent] Initializing agent...")
+        
+        # Create the restaurant agent with all tools
+        self.agent = create_restaurant_agent()
+        
+        # Configure the runner with restaurant settings
+        self.runner = RealtimeRunner(
+            starting_agent=self.agent,
+            config=RESTAURANT_AGENT_CONFIG
+        )
+        
+        print("[RestaurantAgent] Agent initialized with restaurant tools")
+        
+    async def start_session(self):
+        """Start the realtime session with proper context management"""
+        if not self.runner:
+            await self.initialize()
+            
+        print("[RestaurantAgent] Starting session...")
+        # Use context manager for proper session lifecycle
+        self.session_context = await self.runner.run()
+        self.session = await self.session_context.__aenter__()
+        self.is_running = True
+        print("[RestaurantAgent] Session started")
+        return self.session
+    
+    async def send_text(self, text: str):
+        """Send text message to the session"""
+        if self.session and self.is_running:
+            if hasattr(self.session, 'send_text'):
+                await self.session.send_text(text)
+            elif hasattr(self.session, 'send_message'):
+                await self.session.send_message(text)
+            else:
+                print(f"[RestaurantAgent] Text sending not supported")
+    
+    async def send_audio(self, audio_data):
+        """Send audio chunk to the realtime session
+        
+        Args:
+            audio_data: Base64-encoded PCM16 audio string or raw bytes
+        """
+        if self.session and self.is_running:
+            if hasattr(self.session, 'send_audio'):
+                # Convert base64 to bytes if needed
+                if isinstance(audio_data, str):
+                    audio_bytes = base64.b64decode(audio_data)
+                else:
+                    audio_bytes = audio_data
+                    
+                # The RealtimeAgent expects raw PCM16 audio bytes
+                await self.session.send_audio(audio_bytes)
+                print(f"[RestaurantAgent] Sent audio chunk to session")
+            else:
+                print(f"[RestaurantAgent] Audio sending not supported yet")
+    
+    async def process_events(self):
+        """Process events from the realtime session"""
+        if not self.session:
+            print("[RestaurantAgent] No session available")
+            return
+            
+        try:
+            print("[RestaurantAgent] Processing events...")
+            
+            async for event in self.session:
+                event_type = event.type if hasattr(event, 'type') else str(type(event))
+                
+                # Handle different event types
+                if event_type == "raw_model_event":
+                    if hasattr(event, 'data') and hasattr(event.data, 'data'):
+                        raw_data = event.data.data
+                        inner_type = raw_data.get('type', '') if isinstance(raw_data, dict) else None
+                        
+                        if inner_type == 'response.audio_transcript.done':
+                            transcript = raw_data.get('transcript', '')
+                            if transcript:
+                                print(f"[RestaurantAgent] Assistant: {transcript}")
+                                yield {
+                                    "type": "assistant_transcript",
+                                    "transcript": transcript
+                                }
+                            
+                        elif inner_type == 'conversation.item.input_audio_transcription.completed':
+                            transcript = raw_data.get('transcript', '')
+                            if transcript:
+                                print(f"[RestaurantAgent] User: {transcript}")
+                                yield {
+                                    "type": "user_transcript",
+                                    "transcript": transcript
+                                }
+                            
+                        elif inner_type == 'response.audio.delta':
+                            delta = raw_data.get('delta', '')
+                            if delta:
+                                # Delta is base64-encoded PCM16 audio, decode to bytes
+                                try:
+                                    audio_bytes = base64.b64decode(delta)
+                                    yield {
+                                        "type": "audio_chunk",
+                                        "data": audio_bytes
+                                    }
+                                except Exception as e:
+                                    print(f"[RestaurantAgent] Error decoding audio delta: {e}")
+                                
+                        elif inner_type == 'response.audio.done':
+                            yield {"type": "audio_complete"}
+                            
+                        elif inner_type == 'session.created':
+                            print("[RestaurantAgent] Session created")
+                            yield {"type": "session_created"}
+                            
+                        elif inner_type == 'response.function_call_arguments.done':
+                            # Tool was called
+                            tool_name = raw_data.get('name', 'unknown')
+                            print(f"[RestaurantAgent] Calling tool: {tool_name}")
+                            
+                elif event_type == "audio":
+                    if hasattr(event, 'data') and event.data:
+                        audio_bytes = event.data
+                        if isinstance(audio_bytes, bytes):
+                            yield {
+                                "type": "audio_chunk",
+                                "data": audio_bytes
+                            }
+                            
+                elif event_type == "audio_interrupted":
+                    # User interrupted the assistant - just notify frontend
+                    print("[RestaurantAgent] Audio interrupted by user")
+                    yield {
+                        "type": "audio_interrupted"
+                    }
+                    
+                elif event_type == "audio_end":
+                    # Audio response completed
+                    print("[RestaurantAgent] Audio response completed")
+                    yield {
+                        "type": "audio_end"
+                    }
+                    
+                elif event_type == "error":
+                    error = getattr(event, 'error', 'Unknown error')
+                    error_str = str(error)
+                    print(f"[RestaurantAgent] Error: {error_str}")
+                    
+                    # Check if it's an audio truncation error - these are recoverable
+                    if "already shorter than" in error_str:
+                        print("[RestaurantAgent] Audio truncation error - continuing session")
+                        yield {
+                            "type": "warning",
+                            "message": "Audio sync issue detected, continuing..."
+                        }
+                        # Don't break on truncation errors, they're recoverable
+                    else:
+                        yield {
+                            "type": "error",
+                            "error": error_str
+                        }
+                        self.is_running = False
+                        break
+                    
+        except Exception as e:
+            print(f"[RestaurantAgent] Error in process_events: {e}")
+            self.is_running = False
+            
+    async def stop_session(self):
+        """Stop the realtime session with proper cleanup"""
+        print("[RestaurantAgent] Stopping session...")
+        self.is_running = False
+        
+        # Properly exit the context manager
+        if self.session_context:
+            try:
+                await self.session_context.__aexit__(None, None, None)
+            except Exception as e:
+                print(f"[RestaurantAgent] Error closing session context: {e}")
+            self.session_context = None
+            
+        self.session = None
+        print("[RestaurantAgent] Session stopped")
+
+
+# Test function for standalone testing
+async def test_restaurant_agent():
+    """Test the restaurant agent standalone"""
+    print("\n" + "="*60)
+    print("Testing Restaurant Realtime Agent")
+    print("="*60)
+    
+    session = RestaurantRealtimeSession()
+    
+    try:
+        await session.initialize()
+        await session.start_session()
+        
+        # Test messages
+        test_queries = [
+            "Hello! Welcome to Sakura Ramen House!",
+            "What are your hours?",
+            "Tell me about your menu",
+            "I'd like to make a reservation for 4 people tomorrow at 7 PM"
+        ]
+        
+        async def send_messages():
+            await asyncio.sleep(2)
+            for query in test_queries:
+                print(f"\n[Test] Sending: {query}")
+                await session.send_text(query)
+                await asyncio.sleep(8)  # Wait for response
+                
+        async def process():
+            async for event in session.process_events():
+                if event["type"] == "error":
+                    break
+                    
+        await asyncio.gather(send_messages(), process())
+        
+    except KeyboardInterrupt:
+        print("\nInterrupted")
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        await session.stop_session()
+        
+
+if __name__ == "__main__":
+    asyncio.run(test_restaurant_agent())
