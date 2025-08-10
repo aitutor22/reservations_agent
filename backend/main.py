@@ -403,16 +403,6 @@ async def process_message(data: dict):
     }
 
 
-# Import the WebSocket handler
-from websocket_handler import handle_websocket_connection
-
-# WebSocket endpoint for real-time communication
-@app.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str):
-    """WebSocket endpoint for real-time audio and text communication"""
-    # Use the new WebSocket handler
-    await handle_websocket_connection(websocket, session_id)
-
 
 # Restaurant information endpoints (REST fallback)
 @app.get("/api/restaurant/info")

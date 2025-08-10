@@ -4,36 +4,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-Ramen Restaurant Voice Reservation Agent - An AI-powered voice agent for ramen restaurant reservations using OpenAI Realtime API. This web-based application allows customers to inquire about restaurant information, ramen menu options, and manage reservations through natural voice conversations.
+Ramen Restaurant Voice Reservation Agent - A production-ready voice agent for restaurant reservations using OpenAI Agents SDK with RealtimeAgent. This system enables natural voice conversations for restaurant inquiries and reservation management through a WebSocket bridge architecture.
+
+## Current Implementation Status
+
+✅ **Working Features:**
+- Voice input/output via browser microphone
+- Real-time speech-to-speech conversation with OpenAI Realtime API
+- Server-side Voice Activity Detection (VAD) with proper interruption handling
+- Restaurant information queries (hours, location, menu)
+- Reservation creation with tool execution
+- PCM16 audio processing pipeline with proper chunking
+- WebSocket frame size management (<1MB limit)
+- Async session lifecycle management
 
 ## Architecture
 
 ### Technology Stack
-- **Frontend**: React 18+ with TypeScript
-  - Styling: Tailwind CSS
-  - State Management: React Context API (or Zustand for complex state)
-  - Audio Handling: Web Audio API + WebRTC
-  - Real-time Communication: WebSocket for audio streaming
+- **Frontend**: Vue.js 2.x with Vuex
+  - Audio Processing: Web Audio API (ScriptProcessor)
+  - PCM16 Conversion: Real-time Float32 to Int16
+  - WebSocket: Base64-encoded audio transport
+  - Chunk Management: 5-buffer limit (~850ms) with periodic flushing
   
 - **Backend**: FastAPI with OpenAI Agents SDK
-  - Voice Processing: OpenAI Realtime API (speech-to-speech)
-  - WebSocket for persistent audio connection
-  - Integration: POS system for reservation management (future)
+  - RealtimeAgent: Restaurant-specific voice assistant
+  - RealtimeRunner: Session management with async context managers
+  - Voice Processing: Server-side VAD, no manual interruption state
+  - Tools: Restaurant hours, menu, reservations via function_tool decorators
 
-### Key Components
+### Critical Implementation Details
 
-1. **Agent Architecture**
-   - Main greeting agent routes to specialized agents
-   - Information agent handles hours, location, daily specials, ramen menu, and complex queries
-   - Reservation agent manages bookings with tool calling
-   - Multi-turn conversation support with context retention
+1. **Audio Pipeline (frontend/src/components/VoiceInterface.vue)**
+   - Sample Rate: 24kHz mono (OpenAI requirement)
+   - Buffer Size: 4096 samples (~170ms)
+   - Conversion: Float32 [-1,1] → Int16 [-32768,32767]
+   - Chunking: Max 5 buffers per send (~850ms)
+   - Flushing: Every 300ms to prevent buffer accumulation
 
-2. **Frontend Components**
-   - Voice Visualization Component (animated audio levels)
-   - Control Panel (push-to-talk / tap-to-toggle)
-   - Transcript Display (real-time updates)
-   - Status Indicator (connection, latency)
-   - Reservation Summary (confirmation display)
+2. **Session Management (backend/realtime_agent.py)**
+   - MUST use async context managers for session lifecycle
+   - Audio truncation errors are recoverable warnings
+   - No manual interruption state management - let SDK handle VAD
+   - Proper cleanup with __aenter__/__aexit__ pattern
+
+3. **WebSocket Protocol (ws://localhost:8000/ws/realtime/agent)**
+   - Message types: audio_chunk, text_message, end_audio
+   - Audio format: Base64-encoded PCM16
+   - Frame size limit: <700KB base64 (~525KB binary)
+   - Binary frames for audio responses from backend
 
 ## Project Structure
 
@@ -41,11 +60,6 @@ Ramen Restaurant Voice Reservation Agent - An AI-powered voice agent for ramen r
 reservation/
 ├── frontend/                 # React TypeScript application
 │   ├── src/
-│   │   ├── components/      # Reusable UI components
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── services/       # API and WebSocket services
-│   │   ├── types/          # TypeScript type definitions
-│   │   └── utils/          # Utility functions
 │   └── public/
 ├── backend/                 # FastAPI application
 │   ├── agents/             # OpenAI agent definitions
@@ -67,9 +81,11 @@ npm run dev
 
 # Backend
 cd backend
+# venv or conda
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
+# to run
 uvicorn main:app --reload
 ```
 
@@ -86,21 +102,29 @@ pytest
 
 ## API Endpoints
 
-### WebSocket Events
-```typescript
-// Client -> Server
-- 'audio:chunk': { data: ArrayBuffer }
-- 'audio:end': {}
-- 'session:start': { timezone: string }
-- 'session:end': {}
+### Primary WebSocket Endpoint
+`ws://localhost:8000/ws/realtime/agent` - Restaurant RealtimeAgent
 
-// Server -> Client
-- 'audio:response': { data: ArrayBuffer }
-- 'transcript:partial': { text: string; role: 'user' | 'agent' }
-- 'transcript:final': { text: string; role: 'user' | 'agent' }
-- 'agent:state': { state: string; context?: any }
-- 'reservation:confirmed': { reservation: Reservation }
-- 'error': { code: string; message: string }
+**Client → Server Messages:**
+```javascript
+{ type: 'audio_chunk', audio: string }  // Base64-encoded PCM16
+{ type: 'text_message', text: string }  // Text input (fallback)
+{ type: 'end_audio' }                   // Signal end of audio
+```
+
+**Server → Client Messages:**
+```javascript
+// Binary frames for audio
+ArrayBuffer  // PCM16 audio data (24kHz, mono)
+
+// JSON frames for events
+{ type: 'assistant_transcript', transcript: string }
+{ type: 'user_transcript', transcript: string }
+{ type: 'audio_interrupted' }  // User interrupted bot
+{ type: 'audio_end' }          // Audio response complete
+{ type: 'session_started', session_id: string }
+{ type: 'error', error: string }
+{ type: 'warning', message: string }  // Recoverable issues
 ```
 
 ### REST Endpoints
@@ -162,22 +186,29 @@ interface AppState {
 ## Development Guidelines
 
 ### Code Style
-- Use TypeScript for type safety
-- Follow React functional component patterns with hooks
-- Implement proper error handling for all async operations
-- Use proper WebSocket connection management with auto-reconnect
+- Vue.js 2.x with Options API (current implementation)
+- Vuex for state management
+- Proper async/await error handling
+- No manual WebSocket reconnection needed (session-based)
 
 ### Voice Interaction Best Practices
-- Maintain <500ms audio latency
-- Provide visual feedback for all audio states
-- Handle interruptions gracefully
-- Show partial transcripts during speech
+- Audio latency: ~500-800ms (WebSocket bridge adds ~200ms)
+- Visual feedback: Recording indicator, status dots
+- Interruption handling: Automatic via server-side VAD
+- Transcripts: Real-time display of both user and assistant
+
+### Critical Lessons Learned
+1. **VAD Management**: Never manage interruption state manually - let RealtimeSession handle it
+2. **Audio Errors**: "Audio content already shorter" errors are recoverable, don't terminate session
+3. **Frame Size**: Always validate chunk size before sending (<700KB base64)
+4. **Context Managers**: Always use async context managers for session lifecycle
+5. **Buffer Flushing**: Implement periodic flushing to prevent audio accumulation
 
 ### Security Requirements
-- HTTPS only deployment
-- Secure WebSocket (WSS) connections
-- No storage of audio recordings
-- Session timeout after 5 minutes of inactivity
+- HTTPS for production deployment
+- WSS for production WebSocket
+- No audio recording persistence
+- Session cleanup on disconnect
 
 ## Performance Requirements
 - Audio latency: <500ms end-to-end
@@ -213,21 +244,22 @@ interface AppState {
 
 ## Important Notes
 
-- Always test voice interactions with different accents and speaking speeds
-- Ensure graceful fallbacks for all error states
-- Maintain conversation context throughout the session
-- Test on mobile devices for responsive design
-- Follow WCAG 2.1 AA accessibility guidelines
+- Test voice interactions with interruptions and overlapping speech
+- Monitor WebSocket frame sizes to prevent disconnections
+- Use backend/docs/voice_flow_architecture.md for detailed implementation reference
+- Audio format MUST be PCM16, 24kHz, mono for OpenAI compatibility
+- Always use proper async context managers in Python async code
+- Never block audio sends based on interruption state
 
-## llms.txt - Making Your Code AI-Readable
+## docs/backend/llms.txt and docs/frontend/llm.txt - Making Your Code AI-Readable
 
 ### Overview
 
-As AI coding assistants become integral to modern development workflows, ensuring your codebase is easily understood by Large Language Models (LLMs) is crucial. The `llms.txt` file serves as a structured guide that helps AI assistants quickly grasp your project's architecture, conventions, and key concepts.
+As AI coding assistants become integral to modern development workflows, ensuring your codebase is easily understood by Large Language Models (LLMs) is crucial. The `llms.txt` files serves as a structured guide that helps AI assistants quickly grasp your project's architecture, conventions, and key concepts.
 
 ### What is llms.txt?
 
-The `llms.txt` file is a markdown-formatted document placed in your project root that provides LLMs with:
+The `llms.txt` file is a markdown-formatted document placed in `docs/backend/llms.txt` and `docs/frontend/llm.txt` that provides LLMs with:
 - High-level project overview and purpose
 - Architecture descriptions and design decisions
 - Key API endpoints and their functions
@@ -249,10 +281,12 @@ For our ramen restaurant voice agent, having comprehensive LLM-readable document
 
 ### Implementation Benefits
 
-By maintaining an `llms.txt` file alongside traditional documentation:
+By maintaining `docs/backend/llms.txt` and `docs/frontend/llm.txt` alongside traditional documentation:
 - AI assistants understand your specific implementation of OpenAI's voice agents
 - Code suggestions align with your ramen restaurant domain logic
 - Debugging assistance includes context about your audio pipeline
 - Refactoring suggestions maintain your architectural patterns
+
+PLEASE UPDATE THESE FILES PRIOR TO ANY COMMIT
 
 This small investment in AI-readable documentation pays dividends in development velocity and code quality, especially as your voice agent system grows in complexity.
