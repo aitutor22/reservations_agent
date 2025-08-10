@@ -10,6 +10,9 @@ import base64
 from agents.realtime import RealtimeRunner
 from .restaurant_agent import create_restaurant_agent, RESTAURANT_AGENT_CONFIG
 
+# Maximum size for WebSocket frames (512KB for safety, well under 1MB limit)
+MAX_WEBSOCKET_FRAME_SIZE = 512 * 1024  # 512KB in bytes
+
 
 class RestaurantRealtimeSession:
     """Manages the restaurant realtime agent session"""
@@ -70,12 +73,14 @@ class RestaurantRealtimeSession:
                 # Convert base64 to bytes if needed
                 if isinstance(audio_data, str):
                     audio_bytes = base64.b64decode(audio_data)
+                    print(f"[RestaurantAgent] Received audio from frontend: {len(audio_data)} chars base64 -> {len(audio_bytes)} bytes PCM16")
                 else:
                     audio_bytes = audio_data
+                    print(f"[RestaurantAgent] Received audio from frontend: {len(audio_bytes)} bytes")
                     
                 # The RealtimeAgent expects raw PCM16 audio bytes
                 await self.session.send_audio(audio_bytes)
-                print(f"[RestaurantAgent] Sent audio chunk to session")
+                print(f"[RestaurantAgent] Sent audio chunk to OpenAI session")
             else:
                 print(f"[RestaurantAgent] Audio sending not supported yet")
     
@@ -121,10 +126,27 @@ class RestaurantRealtimeSession:
                                 # Delta is base64-encoded PCM16 audio, decode to bytes
                                 try:
                                     audio_bytes = base64.b64decode(delta)
-                                    yield {
-                                        "type": "audio_chunk",
-                                        "data": audio_bytes
-                                    }
+                                    audio_size = len(audio_bytes)
+                                    
+                                    # Check if audio chunk is too large for WebSocket
+                                    if audio_size > MAX_WEBSOCKET_FRAME_SIZE:
+                                        print(f"[RestaurantAgent] Large audio chunk ({audio_size} bytes), splitting...")
+                                        # Split into smaller chunks
+                                        chunk_size = MAX_WEBSOCKET_FRAME_SIZE
+                                        for i in range(0, audio_size, chunk_size):
+                                            chunk = audio_bytes[i:i + chunk_size]
+                                            print(f"[RestaurantAgent] Sending audio chunk {i//chunk_size + 1} ({len(chunk)} bytes)")
+                                            yield {
+                                                "type": "audio_chunk",
+                                                "data": chunk
+                                            }
+                                    else:
+                                        # Normal size, send as-is
+                                        print(f"[RestaurantAgent] Sending audio chunk ({audio_size} bytes)")
+                                        yield {
+                                            "type": "audio_chunk",
+                                            "data": audio_bytes
+                                        }
                                 except Exception as e:
                                     print(f"[RestaurantAgent] Error decoding audio delta: {e}")
                                 

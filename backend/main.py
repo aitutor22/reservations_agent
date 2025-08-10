@@ -288,29 +288,51 @@ async def restaurant_realtime_websocket(websocket: WebSocket):
                         
             except WebSocketDisconnect:
                 print(f"[RestaurantAgent WS] Client disconnected: {session_id}")
+                raise  # Re-raise to exit the task properly
             except Exception as e:
                 print(f"[RestaurantAgent WS] Error handling incoming: {e}")
+                # Don't crash on errors, just log and continue
+                # This allows the session to recover from transient issues
+                await asyncio.sleep(0.1)  # Small delay to prevent tight error loops
                 
         async def handle_outgoing():
             """Handle outgoing events from realtime session"""
             try:
                 async for event in session_manager.process_events():
-                    # Send events back to browser
-                    if event["type"] == "audio_chunk":
-                        # Send audio as binary
-                        await websocket.send_bytes(event["data"])
-                    else:
-                        # Send other events as JSON
-                        await websocket.send_json(event)
+                    try:
+                        # Send events back to browser
+                        if event["type"] == "audio_chunk":
+                            # Send audio as binary
+                            chunk_size = len(event["data"])
+                            if chunk_size > 1024 * 1024:  # 1MB limit check
+                                print(f"[RestaurantAgent WS] WARNING: Audio chunk too large ({chunk_size} bytes), skipping")
+                                continue
+                            await websocket.send_bytes(event["data"])
+                        else:
+                            # Send other events as JSON
+                            await websocket.send_json(event)
+                    except Exception as send_error:
+                        print(f"[RestaurantAgent WS] Error sending event: {send_error}")
+                        # Continue processing other events
                         
             except Exception as e:
                 print(f"[RestaurantAgent WS] Error handling outgoing: {e}")
+                raise  # Re-raise to exit the task
                 
-        # Run both tasks concurrently
-        await asyncio.gather(
+        # Run both tasks concurrently with error isolation
+        # return_exceptions=True prevents one task failure from canceling the other
+        results = await asyncio.gather(
             handle_incoming(),
-            handle_outgoing()
+            handle_outgoing(),
+            return_exceptions=True
         )
+        
+        # Check if any task failed
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                task_name = "handle_incoming" if i == 0 else "handle_outgoing"
+                print(f"[RestaurantAgent WS] Task {task_name} failed: {result}")
+                # Continue - the other task may still be running
         
     except Exception as e:
         print(f"[RestaurantAgent WS] Session error: {e}")
