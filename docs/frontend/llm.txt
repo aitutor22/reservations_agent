@@ -1,0 +1,196 @@
+# Frontend Architecture - Ramen Restaurant Voice Agent
+
+## Overview
+
+This is a Vue.js 2.x frontend application for a voice-enabled restaurant reservation system. The application provides a single-button voice interface that connects to a backend RealtimeAgent for handling restaurant inquiries and reservations through natural speech.
+
+## Current Architecture (After Legacy Code Removal)
+
+### Technology Stack
+- **Framework**: Vue.js 2.6.14
+- **State Management**: Vuex 3.6.2
+- **Router**: Vue Router 3.5.1 (single route application)
+- **Audio Processing**: Web Audio API with ScriptProcessor
+- **Communication**: WebSocket to backend (not direct WebRTC)
+
+### Core Components
+
+#### 1. VoiceInterface.vue (`/src/components/VoiceInterface.vue`)
+The main and only UI component - a voice-first interface with:
+- Single microphone button for voice interaction
+- Real-time audio capture and PCM16 conversion
+- Transcript display showing conversation history
+- Connection status indicator
+
+**Key Features:**
+- Audio capture at 24kHz mono (OpenAI requirement)
+- Real-time Float32 to PCM16 conversion
+- 1024-sample buffers (~43ms chunks) for optimal streaming
+- Immediate sending without buffering for low latency
+- Base64 encoding for WebSocket transport
+
+#### 2. Store (`/src/store/index.js`)
+Vuex store managing application state:
+- WebSocket connection to backend RealtimeAgent
+- Message history and transcripts
+- Connection status tracking
+- Audio playback queue management
+
+**Key Actions:**
+- `connectRealtimeAgent()` - Establishes WebSocket connection
+- `sendAudioChunk()` - Sends PCM16 audio to backend
+- `sendAudioToAgent()` - Handles audio transmission
+
+### Audio Pipeline
+
+#### Recording Flow:
+1. Browser captures audio via getUserMedia (24kHz, mono)
+2. ScriptProcessor processes 1024-sample chunks
+3. Float32 samples converted to PCM16 (Int16Array)
+4. PCM16 encoded to base64
+5. Sent via WebSocket to backend
+
+#### Playback Flow:
+1. Backend sends binary PCM16 audio frames
+2. Store converts PCM16 to Float32
+3. Audio queued and scheduled for gapless playback
+4. Web Audio API plays with precise timing
+
+### WebSocket Protocol
+
+**Endpoint**: `ws://localhost:8000/ws/realtime/agent`
+
+**Client → Server Messages:**
+```json
+{
+  "type": "audio_chunk",
+  "audio": "<base64_encoded_pcm16>"
+}
+```
+
+**Server → Client Events:**
+- Binary frames: Raw PCM16 audio data
+- JSON messages: Transcripts and control events
+
+### File Structure
+```
+frontend/
+├── src/
+│   ├── App.vue              # Root component
+│   ├── main.js              # Entry point
+│   ├── components/
+│   │   └── VoiceInterface.vue  # Voice UI component
+│   ├── store/
+│   │   └── index.js         # Vuex store
+│   ├── router/
+│   │   └── index.js         # Single route to HomeView
+│   └── views/
+│       └── HomeView.vue     # Home view with VoiceInterface
+├── public/
+│   ├── index.html
+│   └── img/
+│       └── logo.png
+└── package.json
+```
+
+## Legacy Code Removed
+
+The following components and features were removed as they were not being used:
+
+### Removed Components:
+- ChatInterface.vue - Text-based chat UI (replaced by voice)
+- MessageList.vue, MessageInput.vue, MessageBubble.vue - Chat components
+- StatusIndicator.vue - Redundant status display
+- AboutView.vue - Unused placeholder view
+
+### Removed Services:
+- webrtc.js - Direct WebRTC to OpenAI implementation (replaced by WebSocket to backend)
+
+### Removed Features:
+- WebRTC state management and actions
+- Direct connection to OpenAI Realtime API
+- Text messaging interface
+- PWA icons and multiple routes
+
+## Key Design Decisions
+
+### Why WebSocket Instead of WebRTC?
+- **Control**: Backend manages OpenAI session and context
+- **Tools**: Custom restaurant-specific functions
+- **Simplicity**: Easier to debug and maintain
+- **Consistency**: Same backend for future channels
+
+### Audio Format Choices:
+- **PCM16**: Required by OpenAI Realtime API
+- **24kHz**: Optimal for speech recognition
+- **Mono**: Sufficient for voice, reduces bandwidth
+- **43ms chunks**: Closest power of 2 to OpenAI's 40ms recommendation
+
+### State Management:
+- **Vuex**: Centralized state for WebSocket and audio
+- **Message history**: Maintained for transcript display
+- **Audio queue**: Managed for smooth playback
+
+## Performance Optimizations
+
+1. **No Audio Buffering**: Send immediately for best VAD response
+2. **Precise Scheduling**: Use AudioContext.currentTime for gapless playback
+3. **Interruption Handling**: Track and stop all audio sources
+4. **Minimal UI**: Single-button interface reduces overhead
+
+## Development Guidelines
+
+### Audio Processing:
+- Always maintain 24kHz sample rate
+- Use power-of-2 buffer sizes for efficiency
+- Handle audio context restrictions (user interaction required)
+
+### WebSocket Management:
+- Automatic reconnection not implemented (session-based)
+- Binary frames for audio, JSON for control
+- Monitor frame size (<1MB limit)
+
+### Error Handling:
+- Graceful degradation on microphone denial
+- Clear user feedback for connection issues
+- Audio context state monitoring
+
+## Testing Checklist
+
+1. **Audio Quality**: No clicks, pops, or static
+2. **Latency**: <500ms end-to-end
+3. **Interruption**: Clean audio stop on user interrupt
+4. **Reconnection**: Proper session cleanup and restart
+5. **Browser Compatibility**: Chrome, Safari, Edge, Firefox
+
+## Future Enhancements
+
+1. **AudioWorklet**: Replace deprecated ScriptProcessor
+2. **Visual Feedback**: Waveform or spectrum analyzer
+3. **Error Recovery**: Automatic reconnection strategies
+4. **Accessibility**: Keyboard navigation and screen reader support
+
+## Dependencies
+
+### Production:
+- vue: 2.6.14
+- vuex: 3.6.2
+- vue-router: 3.5.1
+
+### Development:
+- @vue/cli-service: 5.0.0
+- sass: 1.32.7
+- vue-template-compiler: 2.6.14
+
+## Build and Deployment
+
+```bash
+# Development
+npm install
+npm run serve
+
+# Production Build
+npm run build
+```
+
+The application is optimized for voice-first interaction with minimal visual UI, focusing on real-time audio streaming and processing for natural conversation with the restaurant's AI assistant.

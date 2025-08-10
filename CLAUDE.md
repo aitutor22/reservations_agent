@@ -58,16 +58,21 @@ Ramen Restaurant Voice Reservation Agent - A production-ready voice agent for re
 
 ```
 reservation/
-├── frontend/                 # React TypeScript application
+├── frontend/                 # Vue.js 2.x application (voice-only interface)
 │   ├── src/
+│   │   ├── components/      # VoiceInterface component
+│   │   ├── store/          # Vuex state management
+│   │   ├── router/         # Single-page routing
+│   │   └── views/          # HomeView with voice interface
 │   └── public/
 ├── backend/                 # FastAPI application
-│   ├── agents/             # OpenAI agent definitions
+│   ├── realtime_agents/    # OpenAI RealtimeAgent implementation
 │   ├── services/           # Business logic
 │   ├── api/               # API endpoints
 │   └── models/            # Data models
 └── docs/                   # Documentation
-
+    ├── frontend/           # Frontend-specific docs
+    └── backend/            # Backend-specific docs
 ```
 
 ## Key Commands
