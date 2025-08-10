@@ -7,6 +7,8 @@ The voice reservation system uses the OpenAI Agents SDK with RealtimeAgent for v
 https://openai.github.io/openai-agents-python/realtime/guide/
 
 NOTE: the sdk is constantly changing, and this is correct as of Aug 2025
+https://github.com/openai/openai-agents-python/tree/main/src/agents/realtime
+this is the full code
 
 ## Architecture Diagram
 

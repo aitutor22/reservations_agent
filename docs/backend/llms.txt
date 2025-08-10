@@ -58,3 +58,54 @@ interface AudioChunk {
 - Error boundaries for graceful failure handling
 - Type-safe API calls with TypeScript
 - Async/await pattern for all API operations
+
+## RealtimeAgent API Integration Patterns
+
+### Function Tools and REST APIs
+RealtimeAgent function tools make REST API calls to backend services:
+- Tools use `httpx.AsyncClient` for non-blocking HTTP calls (NOT requests)
+- Connection pooling with singleton client pattern for efficiency
+- Internal networking preferred (localhost in dev, service names in production)
+- Proper error handling with user-friendly messages
+
+### Why httpx Over requests
+- **Async Support**: Native async/await prevents event loop blocking
+- **Voice Performance**: Concurrent API calls reduce latency
+- **Real-time Audio**: Non-blocking I/O maintains smooth audio streaming
+- **Connection Pooling**: Reuses connections for better performance
+
+### Typical Latency Breakdown
+```
+Speech-to-text: ~200-300ms
+LLM processing: ~300-500ms  
+API call:       ~50-200ms (only 5-12% of total!)
+LLM response:   ~200-300ms
+Text-to-speech: ~200-300ms
+Total:          ~1000-1600ms
+```
+
+### Network Architecture
+- **Development**: `http://localhost:8000`
+- **Docker**: `http://api:8000` (container name)
+- **Kubernetes**: `http://reservation-api:8000` (service name)
+- **Cloud VPC**: `http://10.0.1.20:8000` (private IP)
+- **External**: Only for third-party services (Stripe, Twilio, etc.)
+
+### Tool Implementation Example
+```python
+@function_tool
+async def make_reservation(...) -> str:
+    client = await get_api_client()  # Singleton httpx client
+    try:
+        response = await client.post("/api/reservations", json=data)
+        if response.status_code == 200:
+            return f"✅ Confirmed! #{response.json()['id']}"
+        else:
+            return "❌ Unable to book. Please try again."
+    except httpx.TimeoutException:
+        return "❌ System is slow. Please try again."
+```
+
+For detailed documentation, see:
+- `docs/backend/realtime_agent_api_integration.md` - Complete API integration guide
+- `docs/backend/networking_architecture.md` - Network strategies from dev to production

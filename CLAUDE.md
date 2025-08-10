@@ -28,10 +28,11 @@ Ramen Restaurant Voice Reservation Agent - A production-ready voice agent for re
   - Chunk Management: 5-buffer limit (~850ms) with periodic flushing
   
 - **Backend**: FastAPI with OpenAI Agents SDK
-  - RealtimeAgent: Restaurant-specific voice assistant
+  - RealtimeAgent: Restaurant-specific voice assistant with handoff capability
   - RealtimeRunner: Session management with async context managers
   - Voice Processing: Server-side VAD, no manual interruption state
   - Tools: Restaurant hours, menu, reservations via function_tool decorators
+  - API Integration: httpx for async REST calls to backend services
 
 ### Critical Implementation Details
 
@@ -73,6 +74,8 @@ reservation/
 └── docs/                   # Documentation
     ├── frontend/           # Frontend-specific docs
     └── backend/            # Backend-specific docs
+        ├── realtime_agent_api_integration.md  # API integration patterns
+        └── networking_architecture.md          # Network strategies
 ```
 
 ## Key Commands
@@ -201,6 +204,13 @@ interface AppState {
 - Visual feedback: Recording indicator, status dots
 - Interruption handling: Automatic via server-side VAD
 - Transcripts: Real-time display of both user and assistant
+
+### API Integration Best Practices
+- Function tools use httpx.AsyncClient for non-blocking REST calls
+- Connection pooling with singleton client pattern
+- Internal networking (localhost, Docker service names, K8s DNS)
+- User-friendly error messages for voice interactions
+- See `docs/backend/realtime_agent_api_integration.md` for details
 
 ### Critical Lessons Learned
 1. **VAD Management**: Never manage interruption state manually - let RealtimeSession handle it
