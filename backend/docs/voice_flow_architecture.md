@@ -1,247 +1,399 @@
-# Voice Flow Architecture
+# Voice Flow Architecture - Restaurant RealtimeAgent
 
 ## Overview
 
-The voice reservation system uses WebRTC for real-time voice communication, establishing a direct connection between the user's browser and OpenAI's Realtime API. This architecture ensures low latency (<500ms) voice interactions while minimizing backend server load.
+The voice reservation system uses the OpenAI Agents SDK with RealtimeAgent for voice-enabled conversations. The architecture employs a WebSocket bridge between the browser and backend, where the RealtimeAgent manages the conversation with OpenAI's Realtime API. This design provides full control over the conversation flow while maintaining low latency voice interactions.
 
-## Communication Flow
+https://openai.github.io/openai-agents-python/realtime/guide/
 
-### 1. Initial Setup (Backend Hit)
+NOTE: the sdk is constantly changing, and this is correct as of Aug 2025
 
-**Endpoint**: `POST /api/realtime/session` (backend/main.py:151-229)
+## Architecture Diagram
 
-This is the only backend interaction in the WebRTC flow:
+```
+┌─────────────┐     WebSocket      ┌──────────────┐     OpenAI SDK      ┌────────────┐
+│   Browser   │ ◄─────────────────► │   Backend    │ ◄─────────────────► │   OpenAI   │
+│ (Vue.js)    │   PCM16/Base64      │ RealtimeAgent│    Session API      │ Realtime   │
+└─────────────┘                     └──────────────┘                     └────────────┘
+     │                                     │                                    │
+     ├─ Audio Capture                      ├─ Session Management                ├─ Speech Recognition
+     ├─ PCM16 Conversion                   ├─ Tool Execution                    ├─ Speech Synthesis  
+     └─ Audio Playback                     └─ Context Management                └─ VAD Processing
+```
 
-- **Token Generation**: Backend requests an ephemeral token from OpenAI API
-- **Token Validity**: 60 seconds from creation
-- **Response Payload**:
-  ```json
-  {
-    "session_id": "uuid",
-    "ephemeral_key": "eph_xxx",
-    "expires_at": 1234567890,
-    "model": "gpt-4o-realtime-preview-2024-12-17",
-    "voice": "verse",
-    "instructions": "...",
-    "turn_detection": {
-      "type": "server_vad",
-      "threshold": 0.5,
-      "prefix_padding_ms": 300,
-      "silence_duration_ms": 500
-    }
-  }
-  ```
+## Core Components
 
-### 2. WebRTC Connection Setup (Direct to OpenAI)
+### 1. Frontend - VoiceInterface.vue
 
-**No backend involvement from this point forward**
+The voice-first interface with a single microphone button for interaction:
 
-#### Connection Process (frontend/src/services/webrtc.js):
+**Audio Capture Pipeline**:
+- **MediaRecorder API**: Captures microphone input
+- **AudioContext**: Real-time PCM16 conversion at 24kHz
+- **ScriptProcessor**: Processes audio in 4096-sample buffers
+- **Buffer Management**: Accumulates and sends chunks every ~200-400ms
+- **Base64 Encoding**: Converts PCM16 to base64 for WebSocket transport
 
-1. **Create RTCPeerConnection** (line 45)
-   ```javascript
-   config: {
-     iceServers: [
-       { urls: 'stun:stun.l.google.com:19302' }
-     ]
-   }
+**Key Implementation Details**:
+```javascript
+// Audio capture with PCM16 conversion
+audioContext = new AudioContext({ sampleRate: 24000 })
+audioProcessor = audioContext.createScriptProcessor(4096, 1, 1)
+
+// Convert Float32 to Int16 (PCM16)
+for (let i = 0; i < inputData.length; i++) {
+  const s = Math.max(-1, Math.min(1, inputData[i]))
+  pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+}
+
+// Send chunks with size limits to prevent WebSocket frame errors
+const chunksToSend = pcmBuffer.splice(0, Math.min(5, pcmBuffer.length))
+```
+
+### 2. WebSocket Communication Layer
+
+**Endpoint**: `ws://localhost:8000/ws/realtime/agent`
+
+**Message Types**:
+- `audio_chunk`: Base64-encoded PCM16 audio data
+- `text_message`: Text input (fallback option)
+- `end_audio`: Signals end of audio input
+- `assistant_transcript`: Bot's response transcription
+- `user_transcript`: User's speech transcription
+- `audio_interrupted`: User interrupted bot
+- `audio_end`: Audio response completed
+
+**Frame Size Management**:
+- Maximum WebSocket frame: 1MB
+- Audio chunks limited to ~700KB base64
+- Automatic splitting of oversized chunks
+- Periodic buffer flushing every 300ms
+
+### 3. Backend - RestaurantRealtimeSession
+
+**File**: `backend/realtime_agent.py`
+
+The core session manager using OpenAI Agents SDK:
+
+```python
+class RestaurantRealtimeSession:
+    def __init__(self):
+        self.agent = None
+        self.runner = None
+        self.session = None
+        self.session_context = None
+        self.is_running = False
+```
+
+**Key Components**:
+
+1. **RealtimeAgent Configuration**:
+   ```python
+   self.agent = RealtimeAgent(
+       name="SakuraRamenAssistant",
+       instructions="Friendly voice assistant for Sakura Ramen House...",
+       tools=[get_restaurant_hours, make_reservation, ...]
+   )
    ```
 
-2. **Setup Local Audio Stream** (lines 82-108)
-   - Request microphone permissions
-   - Configure audio constraints:
-     ```javascript
-     audio: {
-       echoCancellation: true,
-       noiseSuppression: true,
-       autoGainControl: true,
-       sampleRate: 24000,  // OpenAI requirement
-       channelCount: 1      // Mono audio
-     }
-     ```
+2. **RealtimeRunner Setup**:
+   ```python
+   self.runner = RealtimeRunner(
+       starting_agent=self.agent,
+       config={
+           "model_settings": {
+               "model_name": "gpt-4o-realtime-preview-2024-12-17",
+               "voice": "verse",
+               "modalities": ["text", "audio"],
+               "turn_detection": {
+                   "type": "server_vad",
+                   "threshold": 0.5,
+                   "silence_duration_ms": 500
+               }
+           }
+       }
+   )
+   ```
 
-3. **Create Data Channel** (lines 114-154)
-   - Channel name: `oai-events`
-   - Ordered delivery: true
-   - Handles bidirectional event communication
+3. **Session Lifecycle with Context Manager**:
+   ```python
+   # Proper session initialization
+   self.session_context = await self.runner.run()
+   self.session = await self.session_context.__aenter__()
+   
+   # Proper cleanup
+   await self.session_context.__aexit__(None, None, None)
+   ```
 
-4. **SDP Exchange** (lines 208-234)
-   - Create local offer
-   - Send SDP to: `https://api.openai.com/v1/realtime`
-   - Headers: `Authorization: Bearer ${ephemeralToken}`
-   - Receive and set remote answer
+### 4. Restaurant-Specific Tools
 
-### 3. Audio Processing Pipeline
+The RealtimeAgent has access to custom function tools:
 
-#### Input (User � OpenAI):
-- **Capture**: Browser getUserMedia API
-- **Format**: PCM16 (16-bit PCM audio)
-- **Sample Rate**: 24kHz mono
-- **Transport**: WebRTC audio track
-- **Processing**: Real-time echo cancellation, noise suppression
+- `get_current_time()`: Current time information
+- `get_restaurant_hours()`: Operating hours
+- `get_restaurant_location()`: Address and contact
+- `get_menu_info()`: Ramen varieties and prices
+- `check_availability()`: Table availability check
+- `make_reservation()`: Create reservations
 
-#### Output (OpenAI � User):
-- **Format**: PCM16
-- **Delivery**: Via `ontrack` event (line 161)
-- **Playback**: HTML Audio element with autoplay
-- **Stream**: Continuous audio streaming
+## Audio Data Flow
 
-### 4. Data Channel Events
+### Input Flow (User → Assistant)
 
-The data channel (`oai-events`) handles all non-audio communication:
+1. **Browser Audio Capture**:
+   - getUserMedia() with constraints: 24kHz, mono, echo cancellation
+   - Real-time Float32 → Int16 conversion
+   - Buffer accumulation (4096 samples per chunk)
 
-#### Outbound Events (Browser � OpenAI):
-- `session.update` - Configure session parameters
-- `conversation.item.create` - Send text messages
-- `response.create` - Trigger response generation
-- `input_audio_buffer.commit` - Signal end of audio input
+2. **Frontend Processing**:
+   - Combine buffers (max 5 buffers/~400ms)
+   - Convert to base64 string
+   - Size validation (<700KB per chunk)
+   - Send via WebSocket
 
-#### Inbound Events (OpenAI � Browser):
-- `session.created` - Session initialization confirmed
-- `session.updated` - Configuration changes acknowledged
-- `conversation.item.created` - New conversation items (transcripts)
-- `response.audio.delta` - Audio streaming in progress
-- `response.audio.done` - Audio response complete
-- `error` - Error notifications
+3. **Backend Processing**:
+   - Receive base64 audio string
+   - Decode to PCM16 bytes
+   - Forward to RealtimeAgent session
+   - Session handles speech recognition
 
-## Session Lifecycle
+4. **OpenAI Processing**:
+   - Speech-to-text (Whisper)
+   - Intent understanding
+   - Tool execution if needed
+   - Response generation
 
-### 1. Session Creation
-- Frontend requests ephemeral token from backend
-- Token valid for 60 seconds
-- Multiple sessions can exist simultaneously
+### Output Flow (Assistant → User)
 
-### 2. Connection States
-```
-idle � connecting � connected � disconnected
-         �             �
-       failed        failed
-```
+1. **OpenAI Response**:
+   - Text-to-speech generation
+   - PCM16 audio at 24kHz
+   - Base64-encoded chunks in events
 
-### 3. Connection Monitoring
-- **RTCPeerConnection states**: Monitor via `onconnectionstatechange`
-- **ICE states**: Track via `oniceconnectionstatechange`
-- **Auto-reconnection**: Not implemented (requires new token)
+2. **Backend Processing**:
+   - Receive `response.audio.delta` events
+   - Decode base64 to bytes
+   - Forward as binary WebSocket frames
 
-### 4. Graceful Disconnection
-- Stop all local media tracks
-- Close data channel
-- Close peer connection
-- Clean up audio elements
-
-## Alternative: WebSocket Communication
-
-**Endpoint**: `/ws/{session_id}` (backend/main.py:302-306)
-
-The WebSocket path is an alternative to WebRTC, used when:
-- WebRTC is not supported by the browser
-- Firewall/network restrictions block WebRTC
-- Testing/debugging purposes
-- Server-side audio processing is required
-
-### WebSocket vs WebRTC Comparison
-
-| Aspect | WebRTC | WebSocket |
-|--------|---------|-----------|
-| **Latency** | <500ms | 500-1500ms |
-| **Backend Load** | Minimal (token only) | High (all audio) |
-| **Audio Path** | Browser � OpenAI | Browser � Backend � OpenAI |
-| **Scalability** | Excellent | Limited by backend |
-| **Browser Support** | Modern browsers | All browsers |
-| **NAT Traversal** | STUN/TURN required | Standard HTTP |
+3. **Frontend Playback**:
+   - Receive binary audio data
+   - Queue management for smooth playback
+   - Web Audio API for PCM16 playback
+   - Interrupt handling for VAD
 
 ## Voice Activity Detection (VAD)
 
-Server-side VAD configuration:
-- **Type**: `server_vad` (OpenAI handles silence detection)
-- **Threshold**: 0.5 (sensitivity level)
-- **Prefix Padding**: 300ms (capture before speech starts)
-- **Silence Duration**: 500ms (end-of-speech detection)
+### Configuration
 
-Benefits:
-- Automatic turn-taking in conversation
-- Reduced latency between user input and response
-- Natural conversation flow
+Server-side VAD managed by OpenAI:
+- **Type**: `server_vad` 
+- **Threshold**: 0.5 (sensitivity)
+- **Prefix Padding**: 300ms (capture before speech)
+- **Silence Duration**: 500ms (end detection)
 
-## Security Considerations
+### Key Lessons Learned
 
-### 1. Ephemeral Token Model
-- **Short-lived**: 60-second validity window
-- **Single-use**: One token per session
-- **No persistence**: Tokens not stored in backend
-- **Scope-limited**: Only allows Realtime API access
+1. **Don't Manage Interruption State**:
+   - ❌ Wrong: Track `audio_interrupted` flag to block sends
+   - ✅ Right: Let RealtimeSession handle interruptions internally
+   - The session automatically manages audio truncation and turn-taking
 
-### 2. Direct Client Connection Benefits
-- Audio never touches your backend servers
-- Reduced attack surface (no audio processing vulnerabilities)
-- No audio data storage or logging
-- End-to-end encryption via WebRTC
+2. **Audio Truncation Errors Are Recoverable**:
+   - Error: "Audio content of Xms is already shorter than Yms"
+   - Cause: Continuing to send audio after interruption
+   - Solution: Treat as warning, continue session
 
-### 3. CORS Configuration
-- Restricted origins in production
-- Credentials required for token endpoint
-- WebRTC inherently cross-origin safe
+3. **Proper Event Handling**:
+   ```python
+   # Just notify, don't block
+   elif event_type == "audio_interrupted":
+       print("Audio interrupted by user")
+       yield {"type": "audio_interrupted"}
+   ```
 
-### 4. Authentication Flow
+## WebSocket Frame Size Management
+
+### The Problem
+WebSocket frames have a 1MB limit. Audio accumulation can exceed this.
+
+### Solutions Implemented
+
+1. **Chunk Size Limiting**:
+   ```javascript
+   // Take at most 5 buffers (~400ms)
+   const chunksToSend = pcmBuffer.splice(0, Math.min(5, pcmBuffer.length))
+   ```
+
+2. **Size Validation**:
+   ```javascript
+   if (base64Audio.length > 700000) {
+       // Split into smaller pieces
+       const firstHalf = pcm16.slice(0, halfLength)
+       const secondHalf = pcm16.slice(halfLength)
+   }
+   ```
+
+3. **Periodic Flushing**:
+   ```javascript
+   setInterval(() => {
+       if (pcmBuffer.length > 0) {
+           sendPCM16Chunk()
+       }
+   }, 300) // Every 300ms
+   ```
+
+## Session Management Best Practices
+
+### Context Manager Pattern
+
+Always use async context managers for session lifecycle:
+
+```python
+# Correct approach (from OpenAI example)
+async def start_session(self):
+    self.session_context = await self.runner.run()
+    self.session = await self.session_context.__aenter__()
+
+async def stop_session(self):
+    if self.session_context:
+        await self.session_context.__aexit__(None, None, None)
 ```
-User � Backend (authenticate) � Ephemeral Token
-User � OpenAI (with token) � Direct WebRTC
+
+### Error Recovery
+
+Not all errors are fatal:
+
+```python
+if "already shorter than" in error_str:
+    # Audio sync issue - recoverable
+    yield {"type": "warning", "message": "Audio sync issue"}
+    # Continue session
+else:
+    # Fatal error
+    self.is_running = False
+    break
 ```
 
-## Error Handling
+## Common Pitfalls and Solutions
 
-### Token Expiration
-- Monitor token expiry time
-- Request new token before expiration
-- Graceful reconnection with new token
+### 1. VAD Interruption Handling
 
-### Connection Failures
-- ICE gathering failures � Retry with TURN server
-- Network disconnection � Show user notification
-- OpenAI service issues � Fallback to WebSocket
+**Problem**: Bot stops responding after interruption
+**Mistake**: Managing interruption state manually
+**Solution**: Remove state management, let session handle it
 
-### Audio Permission Denied
-- Clear user messaging about microphone requirements
-- Fallback to text input mode
-- Retry permission request option
+### 2. WebSocket Frame Size
+
+**Problem**: "Frame exceeds limit of 1048576 bytes"
+**Mistake**: Sending entire audio buffer at once
+**Solution**: Chunk limiting and size validation
+
+### 3. Session Lifecycle
+
+**Problem**: Session dies with "sent 1009" errors
+**Mistake**: Not using context managers properly
+**Solution**: Follow OpenAI's example pattern
+
+### 4. Audio Format
+
+**Problem**: "Invalid audio format" errors
+**Mistake**: Sending wrong format or encoding
+**Solution**: PCM16, 24kHz, mono, base64-encoded
+
+### 5. Timing Issues
+
+**Problem**: Audio truncation errors during interruptions
+**Mistake**: Continuing to send audio after interruption
+**Solution**: Handle as recoverable warning
 
 ## Performance Optimizations
 
-### 1. Audio Configuration
-- 24kHz sample rate (optimal for speech)
-- Mono channel (reduces bandwidth)
-- Hardware echo cancellation when available
+### Audio Processing
+- Buffer size: 4096 samples (optimal for real-time)
+- Chunk frequency: Every 200-400ms
+- Maximum chunk: 5 buffers (~400ms audio)
+- Base64 size limit: 700KB per chunk
 
-### 2. Network Optimization
-- STUN for optimal routing
-- No video tracks (audio-only)
-- Efficient data channel for events
+### Network Efficiency
+- WebSocket binary frames for audio responses
+- JSON for control messages only
+- Periodic buffer flushing
+- Size validation before sending
 
-### 3. Resource Management
-- Single Audio element reuse
-- Proper cleanup on disconnection
-- Event listener management
+### Resource Management
+- Proper AudioContext cleanup
+- MediaStream track stopping
+- Interval timer cleanup
+- Session context cleanup
 
 ## Monitoring and Debugging
 
-### Key Metrics to Track
-- Connection establishment time
-- Audio latency (mouth-to-ear)
-- Token refresh success rate
-- Connection stability (disconnection rate)
+### Key Metrics
 
-### Debug Information
-- RTCPeerConnection stats API
-- Data channel message logs
-- Audio level monitoring
-- Network quality indicators
+1. **Audio Quality**:
+   - Chunk sizes (should be <700KB)
+   - Send frequency (every 200-400ms)
+   - Buffer accumulation
+
+2. **Session Health**:
+   - Interruption frequency
+   - Error recovery rate
+   - Session duration
+
+3. **Tool Execution**:
+   - Tool call success rate
+   - Response times
+   - Error handling
+
+### Debug Logging
+
+```javascript
+// Frontend
+console.log(`Sending audio chunk: ${sizeKB}KB`)
+
+// Backend
+print(f"[RestaurantAgent] Audio interrupted by user")
+print(f"[RestaurantAgent] Calling tool: {tool_name}")
+```
+
+## Comparison: WebSocket vs WebRTC Approach
+
+| Aspect | Our WebSocket Approach | Direct WebRTC |
+|--------|------------------------|---------------|
+| **Architecture** | Browser → Backend → OpenAI | Browser → OpenAI |
+| **Control** | Full (custom tools, context) | Limited (no custom tools) |
+| **Latency** | ~500-800ms | <500ms |
+| **Complexity** | Moderate | High |
+| **Tool Support** | Yes (full SDK) | No |
+| **Session Management** | Backend controlled | Client controlled |
+| **Error Recovery** | Easier | Harder |
+| **Scalability** | Backend-limited | Excellent |
+
+## Why We Chose WebSocket + RealtimeAgent
+
+1. **Custom Tools**: Restaurant-specific functionality (reservations, menu)
+2. **Control**: Full conversation management and context
+3. **Simplicity**: Easier to debug and maintain
+4. **Flexibility**: Can modify behavior without client updates
+5. **Consistency**: Same backend for voice and text
 
 ## Future Enhancements
 
-### Planned Improvements
-1. **Automatic Reconnection**: Handle token expiry gracefully
-2. **TURN Server Support**: For restrictive networks
-3. **Audio Recording**: Optional conversation recording
-4. **Multi-language Support**: Dynamic voice/language selection
-5. **Fallback Strategies**: Automatic WebSocket fallback
-6. **Connection Pooling**: Reuse connections across sessions
+### Immediate Improvements
+1. **Connection pooling**: Reuse sessions for efficiency
+2. **Audio compression**: Reduce bandwidth usage
+3. **Retry logic**: Automatic reconnection on failures
+4. **Metric collection**: Performance monitoring
+
+### Long-term Goals
+1. **Multi-language support**: Dynamic voice selection
+2. **Conversation history**: Persistent context
+3. **Advanced tools**: Payment processing, loyalty programs
+4. **Analytics**: Conversation insights and patterns
+5. **Fallback strategies**: Graceful degradation
+
+## Conclusion
+
+The WebSocket + RealtimeAgent architecture provides the perfect balance of control and performance for a restaurant voice assistant. By learning from common pitfalls (especially around VAD and session management), we've built a robust system that handles real-world conversation patterns while maintaining the ability to execute restaurant-specific operations through custom tools.
+
+The key insight: Let the OpenAI SDK handle the complex parts (VAD, audio processing) while focusing on business logic and user experience.
