@@ -59,6 +59,59 @@ interface AudioChunk {
 - Type-safe API calls with TypeScript
 - Async/await pattern for all API operations
 
+## Voice Personality System
+
+### Overview
+The restaurant uses a modular voice personality system that ensures consistent character across all agents while allowing role-specific behaviors. The personality is defined in `backend/realtime_agents/voice_personality.py`.
+
+### Personality Structure
+```python
+# Base personality (shared by all agents)
+BASE_PERSONALITY = """
+- Identity: Refined Japanese restaurant receptionist
+- Accent: Singaporean (gentle and clear)
+- Demeanor: Professional, warm, calm, composed
+- Cultural: Embodies omotenashi (Japanese hospitality)
+"""
+
+# Role-specific additions
+MAIN_AGENT_ROLE = """Greeting and information specialist"""
+RESERVATION_AGENT_ROLE = """Efficient reservation specialist"""
+```
+
+### Voice Configuration
+- **Voice**: "verse" - Warm, friendly, clear articulation
+- **Temperature**: 0.8 - Natural variation without losing consistency
+- **VAD Settings**: Optimized for phone conversations
+  - Threshold: 0.5 (balanced sensitivity)
+  - Silence duration: 500ms (natural pause detection)
+  - Prefix padding: 300ms (captures complete utterances)
+
+### Key Personality Traits
+- **Conversational Style**: Concise, natural, moderate-slow pacing
+- **Speech Patterns**: Clean articulation, no filler words
+- **Formality**: Professional casual with respectful address
+- **Enthusiasm**: Moderate, welcoming without overwhelming
+- **Cultural Elements**: Japanese hospitality, anticipates needs
+
+### Implementation Pattern
+```python
+from voice_personality import get_agent_instructions
+
+agent = RealtimeAgent(
+    name="SakuraRamenAssistant",
+    instructions=get_agent_instructions("main"),
+    tools=[...]
+)
+```
+
+### Benefits
+- Consistent personality across handoffs
+- Easy to maintain and update
+- Role-specific customization
+- Cultural authenticity
+- Natural voice interactions
+
 ## RealtimeAgent API Integration Patterns
 
 ### Function Tools and REST APIs
