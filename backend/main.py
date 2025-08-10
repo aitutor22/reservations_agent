@@ -26,20 +26,48 @@ async def lifespan(app: FastAPI):
     # Initialize database
     try:
         await init_db()
+        
+        # List existing reservations for testing
+        print("\n" + "="*60)
+        print("Existing Reservations in Database:")
+        print("="*60)
+        try:
+            from database import get_db
+            from services.reservation_service import get_reservation_service
+            
+            async for db in get_db():
+                service = await get_reservation_service(db)
+                reservations = await service.list_all_reservations(limit=100)
+                
+                if reservations:
+                    for i, res in enumerate(reservations, 1):
+                        print(f"{i}. {res.name} - {res.phone_number}")
+                        print(f"   Date: {res.reservation_date}, Time: {res.reservation_time}")
+                        print(f"   Party: {res.party_size} people")
+                        if res.other_info:
+                            print(f"   Notes: {res.other_info}")
+                        print("-" * 40)
+                else:
+                    print("No reservations found in database.")
+                break
+        except Exception as e:
+            print(f"Could not list reservations: {e}")
+        print("="*60 + "\n")
+        
     except Exception as db_error:
         print(f"Warning: Could not initialize database: {db_error}")
         print("Continuing without database support...")
     
-    # Initialize knowledge base
-    print("Initializing knowledge base...")
-    try:
-        vector_store_id = setup_knowledge_base()
-        print(f"Knowledge base ready with vector store: {vector_store_id}")
-    except Exception as kb_error:
-        print(f"Warning: Could not initialize knowledge base: {kb_error}")
-        print("Continuing without vector store support...")
+    # # Initialize knowledge base
+    # print("Initializing knowledge base...")
+    # try:
+    #     vector_store_id = setup_knowledge_base()
+    #     print(f"Knowledge base ready with vector store: {vector_store_id}")
+    # except Exception as kb_error:
+    #     print(f"Warning: Could not initialize knowledge base: {kb_error}")
+    #     print("Continuing without vector store support...")
     
-    yield
+    yield  # Required for lifespan context manager
     
     # Shutdown
     print("Shutting down...")

@@ -21,13 +21,15 @@ Simplify the reservation system for a weekend tech demo. Assume tables are alway
 - [x] Reorganized code into modular structure with api/routes/ and api/websockets/
 - [x] Removed unused `/api/admin/reset` and `/api/health` endpoints
 
-#### 2. Update Realtime Tools to Use Actual API
-- [ ] Modify `backend/realtime_tools/reservation.py`:
-  - [ ] Add httpx imports and async client setup
-  - [ ] Keep `check_availability()` as mock (always return available)
-  - [ ] Update `make_reservation()` to call actual API endpoint
-  - [ ] Add proper error handling for API calls
-  - [ ] Return user-friendly messages
+#### 2. Update Realtime Tools to Use Actual API ✅
+- [x] Modify `backend/realtime_tools/reservation.py`:
+  - [x] Add httpx imports and async client setup
+  - [x] Keep `check_availability()` as mock (always return available)
+  - [x] Update `make_reservation()` to call actual API endpoint
+  - [x] Add proper error handling for API calls
+  - [x] Return user-friendly messages
+- [x] Created `backend/realtime_tools/api_client.py` with singleton httpx client
+- [x] Added smart Singapore phone number formatting (8 digits → +65)
 
 #### 3. Phone Number Handling
 - [x] Keep phone number field in ReservationBase model (per user request)
