@@ -13,10 +13,15 @@ Ramen Restaurant Voice Reservation Agent - A production-ready voice agent for re
 - Real-time speech-to-speech conversation with OpenAI Realtime API
 - Server-side Voice Activity Detection (VAD) with proper interruption handling
 - Restaurant information queries (hours, location, menu)
-- Reservation creation with tool execution
+- Reservation creation with tool execution and real API integration
 - PCM16 audio processing pipeline with proper chunking
 - WebSocket frame size management (<1MB limit)
 - Async session lifecycle management
+- Security guardrails for input/output filtering
+- Singapore phone number validation and formatting
+- Modular voice personality system
+- Connection pooling with httpx AsyncClient
+- Async/sync bridge pattern for reservation tools
 
 ## Architecture
 
@@ -32,7 +37,9 @@ Ramen Restaurant Voice Reservation Agent - A production-ready voice agent for re
   - RealtimeRunner: Session management with async context managers
   - Voice Processing: Server-side VAD, no manual interruption state
   - Tools: Restaurant hours, menu, reservations via function_tool decorators
-  - API Integration: httpx for async REST calls to backend services
+  - API Integration: httpx AsyncClient singleton for async REST calls
+  - Security: Guardrail layer for content filtering and safety
+  - Voice Personality: Centralized Sakura Ramen House character configuration
 
 ### Critical Implementation Details
 
@@ -44,16 +51,33 @@ Ramen Restaurant Voice Reservation Agent - A production-ready voice agent for re
    - Flushing: Every 300ms to prevent buffer accumulation
 
 2. **Session Management (backend/realtime_agent.py)**
+   - Uses `GuardrailRestaurantSession` for security filtering
    - MUST use async context managers for session lifecycle
    - Audio truncation errors are recoverable warnings
    - No manual interruption state management - let SDK handle VAD
    - Proper cleanup with __aenter__/__aexit__ pattern
+   - Guardrail statistics tracking and reporting
 
 3. **WebSocket Protocol (ws://localhost:8000/ws/realtime/agent)**
    - Message types: audio_chunk, text_message, end_audio
    - Audio format: Base64-encoded PCM16
    - Frame size limit: <700KB base64 (~525KB binary)
    - Binary frames for audio responses from backend
+   - Guardrail events: guardrail_rejection, guardrail_warning
+
+4. **Security Guardrails (backend/realtime_agents/guardrails.py)**
+   - Input filtering for malicious prompts and system extraction attempts
+   - Output sanitization to prevent information leakage
+   - Singapore phone number validation (+65 format)
+   - Detailed logging of all guardrail actions
+   - Statistics tracking for monitoring
+
+5. **API Integration (backend/realtime_tools/api_client.py)**
+   - Singleton httpx.AsyncClient with connection pooling
+   - Smart phone number formatting for Singapore (+65 prefix)
+   - Async/sync bridge using `run_async_from_sync()` helper
+   - ThreadPoolExecutor fallback for nested event loops
+   - User-friendly error messages for voice responses
 
 ## Project Structure
 
@@ -68,9 +92,15 @@ reservation/
 │   └── public/
 ├── backend/                 # FastAPI application
 │   ├── realtime_agents/    # OpenAI RealtimeAgent implementation
+│   │   ├── guardrails.py  # Security filtering system
+│   │   ├── guardrail_session.py  # Guardrail-enabled session
+│   │   └── voice_personality.py  # Voice character configuration
+│   ├── realtime_tools/     # Agent tool implementations
+│   │   ├── api_client.py  # Singleton HTTP client
+│   │   └── reservation.py # Reservation tools with async/sync bridge
 │   ├── services/           # Business logic
 │   ├── api/               # API endpoints
-│   └── models/            # Data models
+│   └── models/            # Data models with serialization
 └── docs/                   # Documentation
     ├── frontend/           # Frontend-specific docs
     └── backend/            # Backend-specific docs
@@ -133,6 +163,9 @@ ArrayBuffer  // PCM16 audio data (24kHz, mono)
 { type: 'session_started', session_id: string }
 { type: 'error', error: string }
 { type: 'warning', message: string }  // Recoverable issues
+{ type: 'guardrail_rejection', reason: string }  // Content blocked by guardrails
+{ type: 'guardrail_warning', message: string }  // Guardrail warning (non-blocking)
+{ type: 'guardrail_stats', stats: object }  // Guardrail statistics on session close
 ```
 
 ### REST Endpoints
@@ -154,30 +187,34 @@ ArrayBuffer  // PCM16 audio data (24kHz, mono)
 
 ### Reservation Creation Flow
 1. User expresses intent to make reservation
-2. Reservation agent collects:
+2. Guardrails filter input for safety
+3. Reservation agent collects:
    - Date and time
-   - Party size
-   - Name and contact info
-3. Agent confirms availability
-4. Creates reservation and provides confirmation number
-5. Displays reservation summary
+   - Party size  
+   - Name and contact info (Singapore phone validation)
+4. Agent confirms availability via API
+5. Creates reservation through POST /api/reservations
+6. Provides confirmation number with friendly voice response
+7. Displays reservation summary
 
 ## Data Models
 
 ```typescript
 interface Reservation {
   id: string;
-  date: string;
-  time: string;
+  date: string;  // ISO date format
+  time: string;  // HH:MM format
   partySize: number;
   name: string;
-  phone: string;
+  phone: string;  // Singapore format with +65
   email?: string;
   confirmationNumber: string;
   specialRequests?: string;
   seatingPreference?: 'counter' | 'table' | 'booth' | 'no-preference';
   dietaryRestrictions?: string[];
   status: 'confirmed' | 'cancelled' | 'modified';
+  created_at?: string;  // ISO datetime
+  updated_at?: string;  // ISO datetime
 }
 
 interface AppState {
@@ -206,10 +243,13 @@ interface AppState {
 - Transcripts: Real-time display of both user and assistant
 
 ### API Integration Best Practices
-- Function tools use httpx.AsyncClient for non-blocking REST calls
-- Connection pooling with singleton client pattern
+- Function tools use httpx.AsyncClient singleton for non-blocking REST calls
+- Connection pooling with proper lifecycle management
+- Async/sync bridge pattern using `run_async_from_sync()` helper
+- ThreadPoolExecutor fallback for nested event loop scenarios
+- Singapore phone number formatting (+65 prefix automatic)
 - Internal networking (localhost, Docker service names, K8s DNS)
-- User-friendly error messages for voice interactions
+- User-friendly error messages optimized for voice interactions
 - See `docs/backend/realtime_agent_api_integration.md` for details
 
 ### Critical Lessons Learned
@@ -218,12 +258,22 @@ interface AppState {
 3. **Frame Size**: Always validate chunk size before sending (<700KB base64)
 4. **Context Managers**: Always use async context managers for session lifecycle
 5. **Buffer Flushing**: Implement periodic flushing to prevent audio accumulation
+6. **Async/Sync Bridge**: Use `run_async_from_sync()` to handle nested event loops
+7. **Guardrails**: Filter all inputs/outputs for security without blocking legitimate requests
+8. **Phone Validation**: Always format Singapore numbers with +65 prefix
+9. **API Errors**: Provide voice-friendly error messages, not technical details
+10. **Session Cleanup**: Report guardrail statistics on session termination
 
 ### Security Requirements
 - HTTPS for production deployment
 - WSS for production WebSocket
 - No audio recording persistence
 - Session cleanup on disconnect
+- Input/output guardrails for content filtering
+- Protection against prompt injection and system extraction
+- Singapore phone number validation and privacy
+- Detailed logging of security events
+- Guardrail statistics for monitoring
 
 ## Performance Requirements
 - Audio latency: <500ms end-to-end
@@ -239,11 +289,15 @@ interface AppState {
 
 ## Implementation Phases
 
-### Phase 1 - MVP (Current)
+### Phase 1 - MVP (Completed ✅)
 - Basic voice interface
 - General information agent
 - Simple reservation creation
 - Web-only interface
+- Security guardrails
+- Real API integration
+- Singapore phone validation
+- Voice personality system
 
 ### Phase 2 - Enhanced Features
 - Reservation modifications/cancellations
@@ -265,6 +319,11 @@ interface AppState {
 - Audio format MUST be PCM16, 24kHz, mono for OpenAI compatibility
 - Always use proper async context managers in Python async code
 - Never block audio sends based on interruption state
+- Test guardrails with edge cases (prompt injection, phone formats)
+- Monitor guardrail statistics for security insights
+- Use `run_async_from_sync()` for tool implementations
+- Format all Singapore phones with +65 prefix before API calls
+- Provide voice-friendly error messages in all failure scenarios
 
 ## docs/backend/llms.txt and docs/frontend/llm.txt - Making Your Code AI-Readable
 
@@ -305,3 +364,33 @@ By maintaining `docs/backend/llms.txt` and `docs/frontend/llm.txt` alongside tra
 PLEASE UPDATE THESE FILES PRIOR TO ANY COMMIT
 
 This small investment in AI-readable documentation pays dividends in development velocity and code quality, especially as your voice agent system grows in complexity.
+
+## Voice Personality Configuration
+
+The system uses a centralized voice personality defined in `backend/realtime_agents/voice_personality.py`:
+
+- **Restaurant**: Sakura Ramen House
+- **Character**: Friendly Singaporean host
+- **Voice**: shimmer (OpenAI voice ID)
+- **Temperature**: 0.8 (natural conversation flow)
+- **VAD Settings**: Optimized for phone conversations
+  - Silence duration: 300ms
+  - Speech threshold: 0.5
+  - Prefix padding: 100ms
+
+Each agent (main, information, reservation) has role-specific instructions while maintaining consistent personality.
+
+## Dependencies
+
+### Backend (Python 3.11+)
+- `openai-agents==0.2.5` - OpenAI Agents SDK for RealtimeAgent
+- `httpx==0.28.1` - Async HTTP client with connection pooling
+- `fastapi==0.115.6` - Web framework
+- `pydantic==2.10.4` - Data validation and serialization
+- `python-dotenv==1.0.1` - Environment configuration
+
+### Frontend (Node 18+)
+- Vue.js 2.x with Options API
+- Vuex for state management
+- vue-router for navigation
+- WebSocket API for real-time communication
