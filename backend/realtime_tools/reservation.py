@@ -281,9 +281,11 @@ async def _delete_reservation_async(phone: str, name: str) -> str:
     formatted_phone = format_phone_number(phone)
     
     try:
+        import json as json_lib
         response = await client.delete(
             f"/api/reservations/{formatted_phone}",
-            json={"name": name},
+            content=json_lib.dumps({"name": name}),
+            headers={"Content-Type": "application/json"},
             timeout=10.0
         )
         
