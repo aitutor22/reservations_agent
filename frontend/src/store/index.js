@@ -7,7 +7,8 @@ Vue.use(Vuex)
 // Audio context for playing PCM16 audio
 let audioContext = null
 let audioQueue = []
-let isPlaying = false
+let nextPlayTime = 0
+let isScheduling = false
 
 // Function to play PCM16 audio data
 async function playPCM16Audio(blob) {
@@ -36,34 +37,55 @@ async function playPCM16Audio(blob) {
     // Queue the audio for playback
     audioQueue.push(audioBuffer)
     
-    // Play if not already playing
-    if (!isPlaying) {
-      playNextInQueue()
+    // Schedule playback if not already scheduling
+    if (!isScheduling) {
+      scheduleAudioPlayback()
     }
   } catch (error) {
     console.error('Error playing audio:', error)
   }
 }
 
-// Play the next audio buffer in the queue
-function playNextInQueue() {
+// Schedule audio chunks for gapless playback
+function scheduleAudioPlayback() {
   if (audioQueue.length === 0) {
-    isPlaying = false
+    isScheduling = false
     return
   }
   
-  isPlaying = true
-  const audioBuffer = audioQueue.shift()
+  isScheduling = true
   
-  const source = audioContext.createBufferSource()
-  source.buffer = audioBuffer
-  source.connect(audioContext.destination)
-  
-  source.onended = () => {
-    playNextInQueue() // Play next chunk when this one ends
+  // Process all queued buffers
+  while (audioQueue.length > 0) {
+    const audioBuffer = audioQueue.shift()
+    
+    const source = audioContext.createBufferSource()
+    source.buffer = audioBuffer
+    source.connect(audioContext.destination)
+    
+    // Check if we need to reset timing (first chunk or fell behind)
+    const currentTime = audioContext.currentTime
+    if (nextPlayTime < currentTime) {
+      // Add 50ms latency buffer to handle network jitter
+      nextPlayTime = currentTime + 0.05
+      console.log('Starting audio playback with 50ms buffer')
+    }
+    
+    // Schedule this chunk to play at the exact right time
+    source.start(nextPlayTime)
+    
+    // Update next play time to exactly after this chunk
+    nextPlayTime += audioBuffer.duration
   }
   
-  source.start(0)
+  // Schedule next check after a short delay
+  setTimeout(() => {
+    if (audioQueue.length > 0) {
+      scheduleAudioPlayback()
+    } else {
+      isScheduling = false
+    }
+  }, 100) // Check every 100ms for new chunks
 }
 
 export default new Vuex.Store({
@@ -356,9 +378,10 @@ export default new Vuex.Store({
               console.log('Session started:', data.session_id)
             } else if (data.type === 'audio_interrupted') {
               console.log('Audio interrupted - stopping playback')
-              // Clear audio queue when interrupted
+              // Clear audio queue and reset timing when interrupted
               audioQueue = []
-              isPlaying = false
+              nextPlayTime = 0
+              isScheduling = false
             } else if (data.type === 'audio_end') {
               console.log('Audio response completed')
             } else if (data.type === 'warning') {
